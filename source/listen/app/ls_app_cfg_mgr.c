@@ -452,13 +452,13 @@ bool parser_command_item(const char *keyword, const ls_uart_msg_t *recv_msg)
                 if (tmp_item.send_pro_len >= 3 && (uint8_t)tmp_item.send_pro_buf[0] == 0xFA && (uint8_t)tmp_item.send_pro_buf[2] == 0xFB) {
                     uint8_t cmd_code = (uint8_t)tmp_item.send_pro_buf[1];
                     if (cmd_code == 0x01) {
-                        ws2812_traffic_start();      // 显示红灯：开始/重置循环（立即显示红灯）
+                        ws2812_traffic_red();      // 显示红灯：满屏红灯并停留
                     } else if (cmd_code == 0x02) {
-                        ws2812_traffic_set_shape(1); // 直行
+                        ws2812_traffic_start(1);   // 直行：启动一次循环
                     } else if (cmd_code == 0x03) {
-                        ws2812_traffic_set_shape(2); // 左转
+                        ws2812_traffic_start(2);   // 左转：启动一次循环
                     } else if (cmd_code == 0x04) {
-                        ws2812_traffic_set_shape(3); // 右转
+                        ws2812_traffic_start(3);   // 右转：启动一次循环
                     }
                 }
 				return true;

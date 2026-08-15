@@ -93,24 +93,22 @@ void ws2812_show_wakeup(void);
 void ws2812_refresh(void);
 
 /**
- * @brief 交通灯定时切换节拍（红->绿->黄->红，每 1900ms 切换一次相位）。
- *        建议由主循环每 100ms 调用一次，函数内部累计时间后自动切换。
+ * @brief 「显示红灯」：满屏红灯并停留，不触发循环。
+ */
+void ws2812_traffic_red(void);
+
+/**
+ * @brief 「直行/左转/右转」：用指定形状启动一次循环（立即显示绿灯，绿->黄->红后停在红灯）。
+ * @param shape 1=直行 2=左转 3=右转
+ */
+void ws2812_traffic_start(uint8_t shape);
+
+/**
+ * @brief 交通灯循环节拍（每 1900ms 切换一次相位，共执行红绿黄红一次）。
+ *        建议由主循环每 100ms 调用一次。
  * @param dt_ms 距上次调用的毫秒数（通常为 100）
  */
 void ws2812_traffic_tick(uint32_t dt_ms);
-
-/**
- * @brief 开始/重置交通灯循环：立即显示红灯并从红灯开始计时循环。
- *        对应命令词「显示红灯」。
- */
-void ws2812_traffic_start(void);
-
-/**
- * @brief 设置绿灯/黄灯的箭头形状。
- * @param shape 1=直行(向上箭头) 2=左转(向左箭头) 3=右转(向右箭头) 0=满屏色块
- *        对应命令词「直行/左转/右转」，对当前正在显示的绿/黄灯立即生效。
- */
-void ws2812_traffic_set_shape(uint8_t shape);
 
 /**
  * @brief 设置点阵指定 (x, y) 坐标像素点颜色（自动进行 S 型走线转换与亮度控制）

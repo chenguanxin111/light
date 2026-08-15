@@ -49,6 +49,7 @@ int main(int argc, char *argv[])
     static int get_adc_cnt = 0;
     static int adc_power = 0;
     int tick = 0;
+    TickType_t last_ticks = xTaskGetTickCount();
     while (1) {
         // 每 500ms 执行一次 vcc_power 采样与打印（保持原有逻辑）
         if ((tick % 5) == 0) {
@@ -65,8 +66,11 @@ int main(int argc, char *argv[])
                 }
             }
         }
-        // 红绿灯定时切换节拍（每 100ms 驱动一次，内部累计 1900ms 切换相位）
-        ws2812_traffic_tick(100);
+        // 用系统实际流逝时间驱动交通灯循环（消除任务抢占/中断屏蔽造成的累计误差）
+        TickType_t now = xTaskGetTickCount();
+        uint32_t dt_ms = (uint32_t)(now - last_ticks) * portTICK_PERIOD_MS;
+        last_ticks = now;
+        ws2812_traffic_tick(dt_ms);
         x_task_sleep(100);
         tick++;
         // shell_heap_summary();

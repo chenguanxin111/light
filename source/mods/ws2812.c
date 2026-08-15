@@ -297,19 +297,19 @@ static void WS2812_SECTION ws2812_draw_shape(uint8_t shape, uint8_t r, uint8_t g
     ws2812_refresh();
 }
 
-// 2. 命令词2：直行 (zhi2 xing2) -> 绿色大实心向上箭头
+// 2. 命令词2：直行 (zhi2 xing2) -> 黄色大实心向上箭头
 void WS2812_SECTION ws2812_show_straight(void) {
-    ws2812_draw_shape(1, 0, 6, 0);
+    ws2812_draw_shape(1, 6, 6, 0);
 }
 
-// 3. 命令词3：左转 (zuo3 zhuan3) -> 绿色大实心向左箭头
+// 3. 命令词3：左转 (zuo3 zhuan3) -> 黄色大实心向左箭头
 void WS2812_SECTION ws2812_show_left_turn(void) {
-    ws2812_draw_shape(2, 0, 6, 0);
+    ws2812_draw_shape(2, 6, 6, 0);
 }
 
-// 4. 命令词4：右转 (you4 zhuan3) -> 绿色大实心向右箭头
+// 4. 命令词4：右转 (you4 zhuan3) -> 黄色大实心向右箭头
 void WS2812_SECTION ws2812_show_right_turn(void) {
-    ws2812_draw_shape(3, 0, 6, 0);
+    ws2812_draw_shape(3, 6, 6, 0);
 }
 
 // 唤醒词响应动作：暂不显示（no-op）。
@@ -319,12 +319,12 @@ void WS2812_SECTION ws2812_show_wakeup(void) {
     return;
 }
 
-// ===== 交通灯定时切换状态机（红->绿->黄->红，每 1900ms 切换一次相位） =====
-#define WS2812_TRAFFIC_INTERVAL_MS  (1900u)
+// ===== 交通灯单次循环状态机（方向命令后：绿->黄->红，仅执行一次后停在红灯） =====
+#define WS2812_TRAFFIC_INTERVAL_MS  (1700u)
 
-static volatile bool    s_tl_running   = false;   // 是否已开始循环（由「显示红灯」开启）
+static volatile bool    s_tl_running   = false;   // 是否正在循环（由「直行/左转/右转」开启）
 static volatile uint8_t s_tl_phase     = 0;       // 0=红灯 1=绿灯 2=黄灯
-static volatile uint8_t s_tl_shape     = 0;       // 0=满屏色块 1=直行 2=左转 3=右转（粘滞，可说新命令词更新）
+static volatile uint8_t s_tl_shape     = 1;       // 1=直行 2=左转 3=右转
 static volatile uint16_t s_tl_phase_ms = 0;       // 当前相位已累计毫秒数
 
 // 按当前相位渲染一帧
@@ -334,26 +334,29 @@ static void WS2812_SECTION ws2812_tl_render_phase(void) {
         ws2812_show_red_light();                                    // 红灯：满屏红
         break;
     case 1:
-        if (s_tl_shape) ws2812_draw_shape(s_tl_shape, 0, 6, 0);     // 绿灯：当前形状箭头
-        else            ws2812_fill_color(0, 6, 0);                 //       或满屏绿
+        ws2812_draw_shape(s_tl_shape, 0, 6, 0);                     // 绿灯：命令词形状的绿色箭头
         break;
     case 2:
-        if (s_tl_shape) ws2812_draw_shape(s_tl_shape, 6, 6, 0);     // 黄灯：当前形状箭头
-        else            ws2812_fill_color(6, 6, 0);                 //       或满屏黄
+        ws2812_draw_shape(s_tl_shape, 6, 6, 0);                     // 黄灯：命令词形状的黄色箭头
         break;
     }
 }
 
-void WS2812_SECTION ws2812_traffic_start(void) {
-    s_tl_running   = true;
+// 「显示红灯」：满屏红灯并停留，不触发循环
+void WS2812_SECTION ws2812_traffic_red(void) {
+    s_tl_running   = false;
     s_tl_phase     = 0;
     s_tl_phase_ms  = 0;
-    ws2812_tl_render_phase();   // 立即显示红灯并从红灯开始计时循环
+    ws2812_show_red_light();
 }
 
-void WS2812_SECTION ws2812_traffic_set_shape(uint8_t shape) {
-    s_tl_shape = shape;         // 粘滞记忆：后续所有绿/黄阶段沿用
-    if (s_tl_running) ws2812_tl_render_phase();   // 再说新命令词时当前相位立即更新
+// 「直行/左转/右转」：用指定形状启动一次循环（立即显示绿灯，绿->黄->红后停在红灯）
+void WS2812_SECTION ws2812_traffic_start(uint8_t shape) {
+    s_tl_shape     = shape;
+    s_tl_running   = true;
+    s_tl_phase     = 1;          // 从绿灯开始：说完命令词立刻变灯
+    s_tl_phase_ms  = 0;
+    ws2812_tl_render_phase();    // 立即显示对应形状的绿灯箭头
 }
 
 void WS2812_SECTION ws2812_traffic_tick(uint32_t dt_ms) {
@@ -361,8 +364,15 @@ void WS2812_SECTION ws2812_traffic_tick(uint32_t dt_ms) {
     s_tl_phase_ms += dt_ms;
     if (s_tl_phase_ms >= WS2812_TRAFFIC_INTERVAL_MS) {
         s_tl_phase_ms = 0;
-        s_tl_phase = (s_tl_phase + 1u) % 3u;
-        ws2812_tl_render_phase();
+        s_tl_phase++;
+        if (s_tl_phase > 2) {
+            // 循环结束：回到红灯并停止
+            s_tl_phase    = 0;
+            s_tl_running  = false;
+            ws2812_show_red_light();
+        } else {
+            ws2812_tl_render_phase();
+        }
     }
 }
 
