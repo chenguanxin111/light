@@ -1,0 +1,371 @@
+看门狗（WDT）驱动使用文档
+📚 概述
+看门狗定时器（Watchdog Timer, WDT）是一种硬件定时器，用于监测系统运行状态。当程序跑飞或进入死循环时，看门狗可以在超时后自动复位系统，提高系统的可靠性。
+
+本教程适合新手小白，从零开始学习看门狗的使用。
+
+🎯 学习目标
+通过本教程，你将学会：
+
+✅ 什么是看门狗以及为什么要用它
+✅ 看门狗的工作原理
+✅ 如何配置看门狗超时时间
+✅ 如何初始化和启动看门狗
+✅ 如何喂狗（防止复位）
+✅ 实际应用场景
+💡 为什么需要看门狗？
+问题场景
+程序跑飞或死循环：
+
+// ❌ 程序进入死循环，无法退出
+while (1) {
+    // 某个条件永远不满足
+    if (wrong_condition) {
+        break;  // 永远执行不到
+    }
+}
+// 系统卡死，无法响应
+后果：
+
+❌ 系统无响应
+❌ 用户无法操作
+❌ 需要手动重启
+看门狗解决方案
+使用看门狗自动复位：
+
+// ✅ 看门狗自动检测并复位系统
+void main() {
+    wdt_init();    // 初始化看门狗
+    wdt_start();   // 启动看门狗
+
+    while (1) {
+        // 正常工作：定期喂狗
+        do_tasks();
+        wdt_feed();  // 喂狗，重置计数器
+
+        // 如果程序卡死，无法喂狗
+        // 超时后看门狗自动复位系统
+    }
+}
+优势：
+
+✅ 自动检测系统异常
+✅ 自动复位恢复
+✅ 无需人工干预
+✅ 提高系统可靠性
+🔧 看门狗工作原理
+基本原理
+启动看门狗 → 倒计时开始
+     ↓
+   [N 秒]
+     ↓
+倒计时结束 → 触发复位
+     ↑
+     |
+   喂狗（重置计数器）
+工作流程：
+
+启动看门狗：倒计时开始
+正常情况：程序定期喂狗，重置计数器
+异常情况：程序跑飞，无法喂狗，倒计时结束
+超时动作：复位系统
+⏱️ 超时时间配置
+时钟源
+看门狗使用 32KHz 固定时钟。
+
+超时时间计算
+超时时间（秒）= 计数值 / 32000
+常用超时值：
+
+计数值	超时时间	说明
+32000	1秒	极短，不推荐
+64000	2秒	参考值 ⭐
+160000	5秒	常用
+320000	10秒	推荐 ⭐⭐
+640000	20秒	更安全
+示例：
+
+#define WDT_TIMEOUT_PERIOD    320000  // 10秒 = 320000 / 32000
+📌 头文件
+使用看门狗需要包含以下头文件：
+
+#include "Driver_AON_WDT.h"   // 看门狗驱动
+#include "lisa_log.h"         // 日志输出
+#include "xutils.h"           // 工具函数
+🔧 API 函数说明
+1. 初始化看门狗
+int32_t AON_WDT_Initialize(void* res, HAL_AON_WDT_SignalEvent_t callback, void* workspace);
+功能： 初始化看门狗定时器
+
+参数：
+
+res: 看门狗实例指针，由 AON_WDT() 获取
+callback: 超时回调函数（复位模式传 NULL）
+workspace: 用户数据指针（传 NULL）
+返回值：
+
+CSK_DRIVER_OK (0): 成功
+示例：
+
+// 复位模式（推荐）
+AON_WDT_Initialize(AON_WDT(), NULL, NULL);
+2. 电源控制
+int32_t AON_WDT_PowerControl(void* res, CSK_POWER_STATE state);
+功能： 控制看门狗电源状态
+
+示例：
+
+AON_WDT_PowerControl(AON_WDT(), CSK_POWER_FULL);
+3. 配置看门狗
+int32_t AON_WDT_Control(void* res, uint32_t control, uint32_t arg);
+功能： 配置看门狗工作模式和超时时间
+
+配置超时时间
+AON_WDT_Control(AON_WDT(), HAL_AON_WDT_TIME_Msk, 320000);  // 10秒
+配置复位模式
+AON_WDT_Control(AON_WDT(),
+                HAL_AON_WDT_CTRL_RESET_MODE | HAL_AON_WDT_RST_CORE_DOMAIN,
+                0);
+4. 启动看门狗
+int32_t AON_WDT_Enable(void* res);
+功能： 启动看门狗定时器
+
+示例：
+
+AON_WDT_Enable(AON_WDT());
+5. 喂狗（刷新计数器）
+int32_t AON_WDT_Refresh(void* res);
+功能： 重置看门狗计数器（喂狗）
+
+示例：
+
+AON_WDT_Refresh(AON_WDT());  // 喂狗
+💡 使用示例
+示例1：10秒看门狗复位模式 ⭐⭐⭐
+场景： 10秒内未喂狗，系统自动复位
+
+完整代码：
+
+#include "Driver_AON_WDT.h"
+#include "lisa_log.h"
+#include "xutils.h"
+
+// 看门狗超时时间配置
+// 时钟：32KHz，超时时间 = 计数值 / 32000
+// 320000 / 32000 = 10秒
+#define WDT_TIMEOUT_PERIOD    320000
+
+// 初始化看门狗（复位模式）
+int wdt_init_reset_mode() {
+    printk("\n========================================\n");
+    printk("Watchdog Timer Init (Reset Mode)\n");
+    printk("========================================\n\n");
+
+    // 1. 初始化看门狗
+    printk("[1] Initialize WDT\n");
+    __HAL_PMU_AON_TIMER_ENABLE();
+    int ret = AON_WDT_Initialize(AON_WDT(), NULL, NULL);
+    printk("    - AON_WDT_Initialize: ret=%d\n", ret);
+
+    // 2. 电源控制
+    printk("\n[2] Power control\n");
+    ret = AON_WDT_PowerControl(AON_WDT(), CSK_POWER_FULL);
+    printk("    - AON_WDT_PowerControl: ret=%d\n", ret);
+
+    // 3. 配置超时时间（10秒）
+    printk("\n[3] Configure timeout period\n");
+    ret = AON_WDT_Control(AON_WDT(), HAL_AON_WDT_TIME_Msk, WDT_TIMEOUT_PERIOD);
+    printk("    - Timeout: %d (%.1f seconds)\n", WDT_TIMEOUT_PERIOD, (float)WDT_TIMEOUT_PERIOD / 32000);
+    printk("    - AON_WDT_Control: ret=%d\n", ret);
+
+    // 4. 配置复位模式
+    printk("\n[4] Configure reset mode\n");
+    ret = AON_WDT_Control(AON_WDT(),
+                          HAL_AON_WDT_CTRL_RESET_MODE | HAL_AON_WDT_RST_CORE_DOMAIN,
+                          0);
+    printk("    - Mode: Reset + Core domain\n");
+    printk("    - AON_WDT_Control: ret=%d\n", ret);
+
+    printk("\n========================================\n");
+    printk("WDT initialized (Reset Mode)\n");
+    printk("⚠️  Call wdt_start() to enable!\n");
+    printk("========================================\n\n");
+
+    return 0;
+}
+
+// 启动看门狗
+int wdt_start() {
+    printk("[WDT] Starting watchdog...\n");
+    int ret = AON_WDT_Enable(AON_WDT());
+    printk("[WDT] Watchdog started: ret=%d\n", ret);
+
+    // 启动后立即喂狗一次
+    AON_WDT_Refresh(AON_WDT());
+    printk("[WDT] Initial feed done\n");
+
+    return ret;
+}
+
+// 喂狗
+int wdt_feed() {
+    return AON_WDT_Refresh(AON_WDT());
+}
+
+// 使用示例
+void example_wdt() {
+    // 初始化看门狗
+    wdt_init_reset_mode();
+
+    // 启动看门狗
+    wdt_start();
+
+    printk("\n========================================\n");
+    printk("Watchdog Running\n");
+    printk("========================================\n");
+    printk("Timeout: 10 seconds\n");
+    printk("Feed the dog regularly!\n\n");
+
+    int feed_count = 0;
+    while (1) {
+        // 正常工作：定期喂狗
+        // 喂狗间隔必须小于超时时间
+        x_task_sleep(5000);  // 每5秒喂一次（< 10秒）
+
+        wdt_feed();
+        feed_count++;
+
+        printk("[WDT] Feed #%d\n", feed_count);
+
+        //   果  序卡死，无法喂狗
+        // 10秒后看门狗会自动复位系统
+    }
+}
+关键要点：
+
+⭐ 超时时间计算：
+超时时间 = 计数值 / 32000
+320000 / 32000 = 10秒
+⭐ 喂狗间隔：
+必须小于超时时间
+推荐：超时时间的 50%（10秒超时，5秒喂一次）
+⭐ 配置顺序：
+AON_WDT_Initialize()       // 1. 初始化
+AON_WDT_PowerControl()    // 2. 电源控制
+AON_WDT_Control(TIME)     // 3. 设置超时
+AON_WDT_Control(MODE)     // 4. 设置模式
+AON_WDT_Enable()          // 5. 启动
+AON_WDT_Refresh()         // 6. 喂狗
+示例2：中断模式
+配置方式：
+
+// 看门狗回调函数
+void wdt_callback(void* workspace) {
+    printk("⚠️  Watchdog timeout!\n");
+    // 可以在这里喂狗继续运行，或等待复位
+    AON_WDT_Refresh(AON_WDT());
+}
+
+// 初始化（中断模式）
+__HAL_PMU_AON_TIMER_ENABLE();
+AON_WDT_Initialize(AON_WDT(), wdt_callback, NULL);
+AON_WDT_PowerControl(AON_WDT(), CSK_POWER_FULL);
+AON_WDT_Control(AON_WDT(), HAL_AON_WDT_TIME_Msk, 320000);
+AON_WDT_Control(AON_WDT(),
+                HAL_AON_WDT_CTRL_INT_MODE | HAL_AON_WDT_INTERRUPT_EN,
+                0);
+AON_WDT_Enable(AON_WDT());
+⚠️ 重要注意事项
+1. 禁用 mod_xwdt 模块 ⭐⭐⭐
+默认情况下，系统已启用 mod_xwdt 模块（计数器 64000，约 2 秒）。
+
+如果要自定义看门狗配置，必须先禁用 mod_xwdt！
+
+修改 include/autoconf.h：
+
+// 找到这一行（约第88行）：
+// #define CONFIG_XWDT_ENABLE 1
+
+// 改为：
+// #define CONFIG_XWDT_ENABLE 1   // ⭐ 已禁用，使用自定义看门狗
+#define CONFIG_XWDT_ENABLE 0       // 禁用 mod_xwdt 模块
+原因：
+
+mod_xwdt 会在系统启动时自动初始化看门狗
+如果不禁用，会导致看门狗被初始化两次，配置冲突
+2. 喂狗时机
+✅ 正确的喂狗时机：
+
+while (1) {
+    do_tasks();
+    wdt_feed();  // ✅ 任务完成后喂狗
+    x_task_sleep(5000);
+}
+❌ 错误的喂狗时机：
+
+// 在独立任务中喂狗（可能主程序已卡死）
+void feed_task() {
+    while (1) {
+        wdt_feed();  // ❌ 无法检测主程序状态
+        x_task_sleep(1000);
+    }
+}
+3. 喂狗周期
+喂狗周期必须小于看门狗超时时间
+建议：喂狗周期 ≤ 超时时间 / 2
+示例：
+
+超时时间：10秒
+喂狗周期：5秒（推荐）
+安全裕量：50%
+4. 超时时间选择
+推荐值：
+
+应用场景	超时时间	计数值	喂狗间隔
+快速响应	2秒	64000	1秒
+一般应用	5秒	160000	2-3秒
+稳定优先	10秒	320000	5秒 ⭐
+高可靠性	20秒	640000	10秒
+📊 常见问题
+Q1: 看门狗超时时间如何计算？
+A: 基于固定 32KHz 时钟：
+
+超时时间（秒）= 计数值 / 32000
+
+示例：
+- 32000 / 32000 = 1秒
+- 64000 / 32000 = 2秒
+- 320000 / 32000 = 10秒
+Q2: 看门狗复位后程序从哪里开始运行？
+A: 从 main() 函数开始，相当于系统重启。
+
+Q3: 如何测试看门狗是否工作？
+A: 停止喂狗，观察系统是否自动复位：
+
+int feed_count = 0;
+while (1) {
+    if (feed_count < 10) {  // 只喂10次
+        wdt_feed();
+        feed_count++;
+        printk("Feed #%d\n", feed_count);
+    } else {
+        printk("Stop feeding, waiting for reset...\n");
+        // 不喂狗，等待复位
+    }
+    x_task_sleep(1000);
+}
+Q4: 为什么我配置了看门狗但不工作？
+A: 可能的原因：
+
+未禁用 mod_xwdt - 两个看门狗实例冲突 ⭐⭐⭐
+喂狗间隔过长 - 超过了超时时间
+未启动看门狗 - 忘记调用 AON_WDT_Enable()
+配置错误 - 使用了错误的宏或参数
+Q5: 复位模式和中断模式有什么区别？
+A:
+
+模式	超时后行为	回调函数	适用场景
+复位模式	直接复位系统	不需要	大多数场景 ⭐
+中断模式	触发中断回调	需要	需要保存数据
+推荐： 一般使用复位模式
+

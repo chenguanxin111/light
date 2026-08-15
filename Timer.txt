@@ -1,0 +1,477 @@
+TIMER 驱动使用文档
+概述
+TIMER（定时器）驱动用于精确定时和时间管理，广泛应用于周期性任务、超时检测、PWM生成、输入捕获等场景。本驱动基于GPT（General Purpose Timer）模块，提供高精度的定时功能。
+
+重要应用： TIMER可以配合GPIO实现定时拉高拉低GPIO的功能，用于生成特定时序的信号。
+
+主要特性
+支持6个独立的定时器通道（Channel 0-5）
+支持32位、16位、8位定时器模式
+多种运行模式：
+单次模式（Single）
+重复模式（Repeat）
+自由运行模式（FreeRun）
+保持运行模式（KeepGo）
+支持向上计数、向下计数、双向计数
+可配置时钟源和分频
+支持中断回调
+头文件
+#include "Driver_GPT_TIMER.h"
+#include "Driver_GPIO.h"
+#include "IOMuxManager.h"
+#include "PowerManager.h"
+#include "ClockManager.h"
+#include "lisa_log.h"
+API 函数说明
+1. 获取TIMER实例
+void* GPT0_TIMER(void);
+功能： 获取GPT0 TIMER驱动的实例指针
+
+返回值：
+
+TIMER驱动实例指针
+示例：
+
+void *timer_handler = GPT0_TIMER();
+2. 初始化TIMER
+int32_t HAL_GPT_TimerInitialize(void *pGpt, void *user_param);
+功能： 初始化TIMER接口
+
+参数：
+
+pGpt: TIMER实例指针
+user_param: 用户参数，通常传 NULL
+返回值：
+
+CSK_DRIVER_OK (0): 成功
+示例：
+
+HAL_GPT_TimerInitialize(timer_handler, NULL);
+3. 反初始化TIMER
+int32_t HAL_GPT_TimerUninitialize(void *pGpt);
+功能： 反初始化TIMER接口
+
+参数：
+
+pGpt: TIMER实例指针
+返回值：
+
+CSK_DRIVER_OK (0): 成功
+4. 电源控制
+int32_t HAL_GPT_TimerPowerControl(void *pGpt, CSK_POWER_STATE state);
+功能： 控制TIMER电源状态
+
+参数：
+
+pGpt: TIMER实例指针
+state: 电源状态（CSK_POWER_FULL 等）
+返回值：
+
+CSK_DRIVER_OK (0): 成功
+示例：
+
+HAL_GPT_TimerPowerControl(timer_handler, CSK_POWER_FULL);
+5. 配置TIMER通道
+int32_t HAL_GPT_TimerControl(void *pGpt, uint32_t control, GPT_CHANNEL_TYPE channel);
+功能： 配置TIMER通道的工作模式
+
+参数：
+
+pGpt: TIMER实例指针
+control: 控制参数（多个参数通过或运算组合）
+channel: TIMER通道号（GPT_CHANNEL0 - GPT_CHANNEL5）
+控制参数：
+
+定时器位宽
+参数	说明
+CSK_GPT_TIMER_32_BIT_TIMER	32位定时器
+CSK_GPT_TIMER_16_BIT_TIMER	16位定时器
+CSK_GPT_TIMER_8_BIT_TIMER	8位定时器
+时钟源
+参数	说明
+CSK_GPT_TIMER_CLKSRC_PCLK	外设时钟（默认）
+CSK_GPT_TIMER_CLKSRC_CLKT1	Clock1
+CSK_GPT_TIMER_CLKSRC_CLKT0	Clock0
+时钟分频
+参数	说明
+CSK_GPT_TIMER_CLKDIV_1	1分频
+CSK_GPT_TIMER_CLKDIV_2	2分频
+CSK_GPT_TIMER_CLKDIV_4	4分频
+CSK_GPT_TIMER_CLKDIV_8	8分频
+CSK_GPT_TIMER_CLKDIV_16	16分频
+CSK_GPT_TIMER_CLKDIV_32	32分频
+CSK_GPT_TIMER_CLKDIV_64	64分频
+CSK_GPT_TIMER_CLKDIV_128	128分频
+运行模式
+参数	说明
+CSK_GPT_TIMER_RUNMODE_SINGLE	单次模式：定时到期后停止
+CSK_GPT_TIMER_RUNMODE_REPEAT	重复模式：自动重装载，周期性定时
+CSK_GPT_TIMER_RUNMODE_FREERUN	自由运行模式：自由计数
+CSK_GPT_TIMER_RUNMODE_KEEPGO	保持运行模式
+计数模式
+参数	说明
+CSK_GPT_TIMER_COUNTER_UP	向上计数
+CSK_GPT_TIMER_COUNTER_DOWN	向下计数
+CSK_GPT_TIMER_COUNTER_UPDOWN	双向计数
+示例：
+
+uint32_t control = CSK_GPT_TIMER_32_BIT_TIMER |
+                   CSK_GPT_TIMER_CLKSRC_PCLK |
+                   CSK_GPT_TIMER_CLKDIV_1 |
+                   CSK_GPT_TIMER_RUNMODE_REPEAT |
+                   CSK_GPT_TIMER_COUNTER_UP;
+
+HAL_GPT_TimerControl(timer_handler, control, GPT_CHANNEL0);
+6. 注册定时器回调
+int32_t HAL_GPT_RegisterTimerCallback(void *pGpt, GPT_CHANNEL_TYPE channel, CSK_GPT_SignalEvent_t cb_event);
+功能： 注册定时器超时回调函数
+
+参数：
+
+pGpt: TIMER实例指针
+channel: TIMER通道号
+cb_event: 回调函数指针，函数原型：void callback(uint32_t event, void *param)
+返回值：
+
+CSK_DRIVER_OK (0): 成功
+示例：
+
+void timer_callback(uint32_t event, void *param) {
+    if (event & CSK_GPT_EVENT_OVERFLOW) {
+        // 定时器溢出事件
+        printk("Timer overflow!\n");
+    }
+}
+
+HAL_GPT_RegisterTimerCallback(timer_handler, GPT_CHANNEL0, timer_callback);
+7. 设置定时器周期
+int32_t HAL_GPT_SetTimerPeriodByCount(void *pGpt, GPT_CHANNEL_TYPE channel, uint32_t count);
+功能： 设置定时器周期（以计数为单位）
+
+参数：
+
+pGpt: TIMER实例指针
+channel: TIMER通道号
+count: 定时周期计数值
+返回值：
+
+CSK_DRIVER_OK (0): 成功
+计算公式：
+
+定时时间 = (count * 分频系数) / 时钟频率
+
+示例：
+
+假设时钟频率为 100MHz，分频系数为 1，需要定时 1ms：
+
+// 1ms = 100000 个时钟周期（100MHz / 1000）
+HAL_GPT_SetTimerPeriodByCount(timer_handler, GPT_CHANNEL0, 100000);
+8. 启动定时器
+int32_t HAL_GPT_StartTimer(void *pGpt, GPT_CHANNEL_TYPE channel);
+功能： 启动定时器计数
+
+参数：
+
+pGpt: TIMER实例指针
+channel: TIMER通道号
+返回值：
+
+CSK_DRIVER_OK (0): 成功
+示例：
+
+HAL_GPT_StartTimer(timer_handler, GPT_CHANNEL0);
+9. 读取定时器计数值
+int32_t HAL_GPT_ReadTimerCount(void *pGpt, GPT_CHANNEL_TYPE channel, uint32_t *count);
+功能： 读取当前定时器计数值
+
+参数：
+
+pGpt: TIMER实例指针
+channel: TIMER通道号
+count: 输出参数，存储当前计数值
+返回值：
+
+CSK_DRIVER_OK (0): 成功
+示例：
+
+uint32_t current_count;
+HAL_GPT_ReadTimerCount(timer_handler, GPT_CHANNEL0, &current_count);
+printk("Current count: %d\n", current_count);
+10. 停止定时器
+int32_t HAL_GPT_StopTimer(void *pGpt, GPT_CHANNEL_TYPE channel);
+功能： 停止定时器计数
+
+参数：
+
+pGpt: TIMER实例指针
+channel: TIMER通道号
+返回值：
+
+CSK_DRIVER_OK (0): 成功
+示例：
+
+HAL_GPT_StopTimer(timer_handler, GPT_CHANNEL0);
+使用示例
+示例1：周期性定时器（定时拉高拉低GPIO）⭐
+场景： 每隔500ms切换一次GPIO电平（LED闪烁）
+
+#include "Driver_GPT_TIMER.h"
+#include "Driver_GPIO.h"
+#include "IOMuxManager.h"
+#include "PowerManager.h"
+#include "ClockManager.h"
+#include "lisa_log.h"
+
+#define TIMER_INTERVAL_MS   500  // 500ms定时
+
+static void *s_timer_handler = NULL;
+static int led_state = 0;
+
+// 定时器回调函数
+void timer_callback(uint32_t event, void *param) {
+    if (event & CSK_GPT_EVENT_OVERFLOW) {
+        // 切换LED状态
+        led_state = !led_state;
+        GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, led_state);
+        printk("LED state: %s\n", led_state ? "ON" : "OFF");
+    }
+}
+
+// 初始化定时器和GPIO
+int timer_gpio_init() {
+    // 1. 初始化GPIO（A10控制LED）
+    IOMuxManager_PinConfigure(CSK_IOMUX_PAD_A, 10, CSK_IOMUX_FUNC_DEFAULT);
+    GPIO_Initialize(GPIOA(), NULL, NULL);
+    GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_OUTPUT);
+    GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, 0);  // 初始关闭
+
+    // 2. 使能时钟
+    __HAL_PMU_GPT_RST_ENABLE();
+    __HAL_CRM_GPT_S_CLK_ENABLE();
+    __HAL_CRM_GPT_T0_CLK_ENABLE();
+    __HAL_CRM_GPT_CLK_ENABLE();
+
+    // 3. 获取TIMER实例
+    s_timer_handler = GPT0_TIMER();
+
+    // 4. 初始化TIMER
+    HAL_GPT_TimerUninitialize(s_timer_handler);
+    HAL_GPT_TimerInitialize(s_timer_handler, NULL);
+    HAL_GPT_TimerPowerControl(s_timer_handler, CSK_POWER_FULL);
+
+    // 5. 配置TIMER
+    // 使用32位定时器，重复模式
+    uint32_t control = CSK_GPT_TIMER_32_BIT_TIMER |
+                       CSK_GPT_TIMER_CLKSRC_PCLK |
+                       CSK_GPT_TIMER_CLKDIV_1 |
+                       CSK_GPT_TIMER_RUNMODE_REPEAT |
+                       CSK_GPT_TIMER_COUNTER_UP;
+
+    HAL_GPT_TimerControl(s_timer_handler, control, GPT_CHANNEL0);
+
+    // 6. 注册回调函数
+    HAL_GPT_RegisterTimerCallback(s_timer_handler, GPT_CHANNEL0, timer_callback);
+
+    // 7. 设置定时周期
+    // 假设PCLK = 100MHz，需要500ms
+    // 计数值 = (100MHz * 0.5s) = 50000000
+    HAL_GPT_SetTimerPeriodByCount(s_timer_handler, GPT_CHANNEL0, 50000000);
+
+    // 8. 启动定时器
+    HAL_GPT_StartTimer(s_timer_handler, GPT_CHANNEL0);
+
+    printk("Timer and GPIO initialized\n");
+    return 0;
+}
+预期日志：
+
+image.png
+
+示例2：单次定时器（延时后执行操作）
+// 单次定时，延时2秒后打开设备
+void one_shot_timer_example() {
+    void *timer = GPT0_TIMER();
+
+    // 初始化
+    HAL_GPT_TimerInitialize(timer, NULL);
+    HAL_GPT_TimerPowerControl(timer, CSK_POWER_FULL);
+
+    // 配置为单次模式
+    HAL_GPT_TimerControl(timer,
+        CSK_GPT_TIMER_32_BIT_TIMER |
+        CSK_GPT_TIMER_CLKSRC_PCLK |
+        CSK_GPT_TIMER_CLKDIV_1 |
+        CSK_GPT_TIMER_RUNMODE_SINGLE |  // 单次模式
+        CSK_GPT_TIMER_COUNTER_UP,
+        GPT_CHANNEL0);
+
+    // 注册回调
+    HAL_GPT_RegisterTimerCallback(timer, GPT_CHANNEL0, timer_callback);
+
+    // 设置2秒定时
+    HAL_GPT_SetTimerPeriodByCount(timer, GPT_CHANNEL0, 200000000);  // 2秒
+
+    // 启动定时器
+    HAL_GPT_StartTimer(timer, GPT_CHANNEL0);
+}
+示例3：产生PWM信号（通过定时拉高拉低GPIO）
+// 使用定时器生成PWM信号（频率1kHz，占空比50%）
+void timer_pwm_example() {
+    void *timer = GPT0_TIMER();
+
+    // 初始化GPIO（A10）
+    IOMuxManager_PinConfigure(CSK_IOMUX_PAD_A, 10, CSK_IOMUX_FUNC_DEFAULT);
+    GPIO_Initialize(GPIOA(), NULL, NULL);
+    GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_OUTPUT);
+
+    // PWM参数
+    uint32_t pwm_freq = 1000;  // 1kHz
+    uint32_t duty = 50;        // 50%占空比
+    uint32_t period_count = 100000;  // 假设100MHz时钟，100us周期
+
+    // 高电平时间
+    uint32_t high_count = period_count * duty / 100;
+    // 低电平时间
+    uint32_t low_count = period_count - high_count;
+
+    static int pwm_state = 0;
+
+    // 定时器回调
+    void pwm_timer_callback(uint32_t event, void *param) {
+        if (pwm_state == 0) {
+            // 输出高电平
+            GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, 1);
+            pwm_state = 1;
+            // 设置低电平时间
+            HAL_GPT_SetTimerPeriodByCount(timer, GPT_CHANNEL0, high_count);
+        } else {
+            // 输出低电平
+            GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, 0);
+            pwm_state = 0;
+            // 设置高电平时间
+            HAL_GPT_SetTimerPeriodByCount(timer, GPT_CHANNEL0, low_count);
+        }
+        HAL_GPT_StartTimer(timer, GPT_CHANNEL0);
+    }
+
+    // 初始化定时器
+    HAL_GPT_TimerInitialize(timer, NULL);
+    HAL_GPT_TimerPowerControl(timer, CSK_POWER_FULL);
+    HAL_GPT_TimerControl(timer,
+        CSK_GPT_TIMER_32_BIT_TIMER |
+        CSK_GPT_TIMER_CLKSRC_PCLK |
+        CSK_GPT_TIMER_CLKDIV_1 |
+        CSK_GPT_TIMER_RUNMODE_SINGLE |  // 单次模式，手动重装载
+        CSK_GPT_TIMER_COUNTER_UP,
+        GPT_CHANNEL0);
+
+    HAL_GPT_RegisterTimerCallback(timer, GPT_CHANNEL0, pwm_timer_callback);
+
+    // 启动第一次定时
+    HAL_GPT_SetTimerPeriodByCount(timer, GPT_CHANNEL0, low_count);
+    HAL_GPT_StartTimer(timer, GPT_CHANNEL0);
+}
+示例4：精确延时
+// 精确延时函数（微秒级）
+void delay_us(uint32_t us) {
+    void *timer = GPT0_TIMER();
+
+    // 初始化定时器（如果未初始化）
+    static int initialized = 0;
+    if (!initialized) {
+        HAL_GPT_TimerInitialize(timer, NULL);
+        HAL_GPT_TimerPowerControl(timer, CSK_POWER_FULL);
+        HAL_GPT_TimerControl(timer,
+            CSK_GPT_TIMER_32_BIT_TIMER |
+            CSK_GPT_TIMER_CLKSRC_PCLK |
+            CSK_GPT_TIMER_CLKDIV_1 |
+            CSK_GPT_TIMER_RUNMODE_SINGLE |
+            CSK_GPT_TIMER_COUNTER_UP,
+            GPT_CHANNEL1);
+        initialized = 1;
+    }
+
+    // 设置延时（假设100MHz时钟）
+    uint32_t count = us * 100;  // 1us = 100个时钟周期
+    HAL_GPT_SetTimerPeriodByCount(timer, GPT_CHANNEL1, count);
+
+    // 启动并等待完成
+    HAL_GPT_StartTimer(timer, GPT_CHANNEL1);
+
+    // 等待定时器停止
+    uint32_t current_count;
+    do {
+        HAL_GPT_ReadTimerCount(timer, GPT_CHANNEL1, &current_count);
+    } while (current_count > 0);
+}
+
+// 使用示例
+void example_delay() {
+    printk("Start delay...\n");
+    delay_us(1000);  // 延时1ms
+    printk("Delay done!\n");
+}
+定时周期计算
+计算公式
+定时时间 = (count × 分频系数) / 时钟频率
+示例计算
+假设时钟频率为 100MHz：
+
+定时时间	分频系数	计数值
+1ms	1	100000
+10ms	1	1000000
+100ms	1	10000000
+1s	1	100000000
+1ms	8	12500
+1ms	128	781
+代码示例：
+
+// 计算1ms定时的计数值
+uint32_t clock_freq = 100000000;  // 100MHz
+uint32_t timer_interval_ms = 1;
+uint32_t clkdiv = 1;
+
+uint32_t count = (clock_freq / 1000) * timer_interval_ms / clkdiv;
+HAL_GPT_SetTimerPeriodByCount(timer_handler, GPT_CHANNEL0, count);
+注意事项
+1. 时钟使能
+使用定时器前必须使能时钟：
+
+__HAL_PMU_GPT_RST_ENABLE();
+__HAL_CRM_GPT_S_CLK_ENABLE();
+__HAL_CRM_GPT_T0_CLK_ENABLE();
+__HAL_CRM_GPT_CLK_ENABLE();
+2. 通道选择
+不同的定时器通道可以独立配置
+建议不同用途使用不同通道
+3. 回调函数
+回调函数在中断上下文中执行，应尽量简短
+避免在回调中执行耗时操作
+4. 定时精度
+定时精度受时钟源精度影响
+使用外部晶振可获得更高精度
+常见问题
+Q1: 定时不准确？
+可能原因：
+
+时钟频率计算错误
+分频系数配置不当
+时钟源不稳定
+解决方法：
+
+确认时钟频率配置
+使用示波器测量实际频率
+尝试使用晶振时钟源
+Q2: 定时器不触发回调？
+检查步骤：
+
+确认已注册回调函数
+确认已启动定时器
+确认定时周期设置正确
+检查中断是否被屏蔽
+Q3: 如何实现更精确的定时？
+建议：
+
+使用高精度时钟源
+减小分频系数
+使用硬件PWM代替软件定时

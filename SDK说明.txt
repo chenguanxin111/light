@@ -1,0 +1,399 @@
+Mars-SDK说明
+SDK简介
+什么是 Mars SDK？
+Mars SDK 是一个用于开发智能语音交互设备的软件开发套件（SDK）。它基于 RISC-V 架构芯片（CSK系列），提供了完整的语音识别、命令词检测、提示音播放等功能。
+
+主要特点：
+
+支持离线语音识别，无需联网
+支持自定义命令词和协议
+提供丰富的硬件驱动接口（GPIO、UART、PWM、I2C等）
+集成实时操作系统（RTOS）支持
+跨平台编译支持（Windows 和 Linux）
+自动化工具链下载和配置
+适用场景：
+
+智能家电（灯具、窗帘、风扇等）
+智能音箱
+儿童玩具
+车载语音助手
+其他需要语音交互的嵌入式设备
+目录结构详解
+顶层目录概览
+mars-sdk/
+├── build.bat          # Windows 编译脚本
+├── build.sh           # Linux 编译脚本
+├── CMakeLists.txt     # CMake 构建配置文件
+├── .config            # SDK 配置文件（Kconfig生成）
+├── readme.md          # 快速入门文档
+├── pack_img.sh        # 镜像打包脚本
+│
+├── chip/              # 芯片相关文件（驱动、BSP等）
+├── include/           # SDK 公共头文件
+├── libraries/         # 预编译的库文件
+├── modules/           # 可选模块（RTOS、MP3、Shell等）
+├── source/            # 应用源代码（你的主要开发区域）
+├── tools/             # 开发工具集
+└── build/             # 编译输出目录（编译后生成）
+各目录详细说明
+1. chip/ - 芯片相关目录
+这个目录包含芯片级别的底层代码，包括硬件驱动和板级支持包（BSP）。
+
+chip/
+├── include/           # 芯片驱动头文件
+│   ├── Driver_GPIO.h      # GPIO驱动接口
+│   ├── Driver_UART.h      # UART串口驱动
+│   ├── Driver_I2C.h       # I2C驱动接口
+│   ├── Driver_SPI.h       # SPI驱动接口
+│   ├── Driver_GPT_PWM.h   # PWM脉宽调制驱动
+│   ├── Driver_ADC_PDM.h   # ADC音频采集驱动
+│   ├── Driver_CLASSD.h    # Class D功放驱动
+│   ├── ClockManager.h     # 时钟管理
+│   └── IOMuxManager.h     # IO引脚复用管理
+│
+├── bsp/               # 板级支持包（Board Support Package）
+│   └── system_RISCVN300.h # 系统初始化配置
+│
+└── rom/               # ROM相关文件（芯片固化的代码）
+开发提示：
+
+✅ 你需要了解这个目录的内容，但通常不需要修改它
+✅ 使用 chip/include/ 下的驱动头文件来操作硬件
+✅ BSP 文件定义了芯片的基础配置（时钟、中断等）
+2. include/ - SDK公共头文件目录
+这个目录包含 SDK 通用的头文件和标准库接口。
+
+include/
+├── CMSIS/             # ARM CMSIS 标准接口（通用嵌入式标准）
+│   ├── cmsis_version.h
+│   └── cmsis_compiler.h
+│
+├── NMSIS/             # Nuclei NMSIS 接口（RISC-V 扩展标准）
+│   ├── nmsis_version.h
+│   └── nmsis_core.h
+│
+├── bsp/               # BSP 公共头文件
+│
+├── debug/             # 调试相关头文件
+│
+├── autoconf.h         # 配置文件（由Kconfig自动生成）
+├── sdkinc.h           # SDK 统一头文件引用
+├── stdinc.h           # 标准库头文件引用
+└── xutils.h           # 常用工具函数（日志、延时等）
+开发提示：
+
+✅ autoconf.h 包含了你的配置选项，由 .config 文件生成
+✅ sdkinc.h 提供了统一的头文件引用方式
+✅ xutils.h 包含常用工具函数，如日志打印、延时函数等
+3. libraries/ - 预编译库文件目录
+这个目录存放已经编译好的库文件（.a 格式），这些是核心功能库，不需要你重新编译。
+
+libraries/
+├── include/           # 库文件对应的头文件
+│
+├── libdrv.a           # 硬件驱动库（约2.8MB）
+├── libesr.a           # 语音识别算法库（约3.6MB）⭐ 重要
+├── libbsp.a           # 板级支持包库（约220KB）
+├── librtos.a          # 实时操作系统库（约914KB）
+├── libluna.a          # Luna核心功能库（约1.2MB）
+├── libmp3.a           # MP3解码库（约958KB）
+├── libshell.a         # Shell命令行调试库（约222KB）
+├── libtnvs.a          # 非易失性存储库（约72KB）
+├── libcrc32.a         # CRC32校验库（约9KB）
+└── libcopy.a          # 内存拷贝优化库（约29KB）
+重要说明：
+
+⭐ libesr.a 是核心的语音识别算法库，由平台打包时自动更新
+✅ 这些库文件由 ListenAI 提供，通常不需要修改
+✅ 如果需要查看库的接口，查看 libraries/include/ 下的头文件
+✅ 平台打包会自动更新 libesr.a，请勿手动修改
+4. modules/ - 可选模块目录
+这个目录包含一些可选的功能模块，每个模块都是独立的代码包。
+
+modules/
+├── rtos/              # 实时操作系统模块
+│   └── RTOS线程管理、任务调度、信号量等
+│
+├── mp3/               # MP3音频解码模块
+│   └── MP3文件解析、解码播放
+│
+├── shell/             # Shell命令行调试模块
+│   └── 提供串口调试命令接口
+│
+├── tnvs/              # Tiny Non-Volatile Storage（小容量非易失存储）
+│   └── 配置参数保存、读取
+│
+├── crc32/             # CRC32校验模块
+│   └── 数据校验、完整性验证
+开发提示：
+
+✅ 这些模块可以通过配置文件（.config）启用或禁用
+✅ 如果需要修改某个模块的行为，可以修改对应的源码
+✅ RTOS 是核心模块，用于管理多任务和线程
+5. source/ - 应用源代码目录 ⭐ 最重要
+这是你的主要开发区域，包含了所有应用层代码。你的大部分二次开发工作都在这里进行。
+
+source/
+├── main.c             # 主程序入口 ⭐
+│   └── main() 函数，系统启动后执行的第一个函数
+│
+├── appinc.h           # 应用层统一头文件引用
+│
+├── listen/            # 核心应用逻辑 ⭐⭐⭐
+│   ├── app/           # 应用层业务逻辑（你的核心开发区域）
+│   │   ├── ls_app_client.c/h      # 应用客户端接口
+│   │   ├── ls_app_cfg_mgr.c/h     # 配置管理器
+│   │   ├── ls_app_cfg_def.h       # 命令词和协议默认配置
+│   │   ├── ls_app_cfg_user.h      # 用户自定义配置 ⭐ 重点修改文件
+│   │   ├── ls_app_volume.c/h      # 音量控制
+│   │   ├── ls_app_uart.c/h        # UART通信
+│   │   ├── ls_app_flash.c/h       # Flash存储操作
+│   │   ├── ls_app_factory.c/h     # 工厂测试模式
+│   │   ├── ls_app_msg.c/h         # 消息处理
+│   │   ├── ls_app_algo.c/h        # 算法调用接口
+│   │   └── ls_app_config.c/h      # 配置文件管理
+│   │
+│   ├── tone/          # 提示音管理
+│   │   ├── tone.h            # 提示音定义
+│   │   └── tone_buf.h        # 提示音数据缓冲区
+│   │
+│   ├── player/        # 音频播放器
+│   │   └── mini_player.c/h   # 播放器实现
+│   │
+│   ├── pa/            # 功放控制
+│   │   └── 功放开关、音量调节
+│   │
+│   ├── esr/           # 语音识别引擎接口
+│   │   └── 语音识别回调、结果处理
+│   │
+│   ├── porting/       # 平台移植适配层
+│   │   └── 硬件抽象层、驱动适配
+│   │
+│   └── utils/         # 工具函数
+│   │   └── 日志、调试工具
+│   │
+├── mods/              # 硬件模块驱动实现
+│   ├── mod_gpio.c     # GPIO模块实现
+│   ├── mod_aadc.c     # 音频ADC模块
+│   ├── mod_i2so.c     # I2S音频输出模块
+│   ├── mod_spim.c     # SPI主机模块
+│   ├── mod_clock.c    # 时钟配置模块
+│   ├── mod_clsd.c     # Class D功放模块
+│   ├── mod_dmac.c     # DMA控制器模块
+│   ├── mod_tnvs.c     # 非易失存储模块
+│   ├── mod_trace.c    # 调试跟踪模块
+│   ├── mod_uprot.c    # 用户协议模块
+│   └── mod_xwdt.c     # 看门狗模块模块
+│
+│   ⚠️ mods 重要说明：
+│   ├─ 这些代码会在系统启动时自动执行
+│   ├─ 它们是模块化的驱动实现，不是使用示例
+│   ├─ 每个模块通过 CONFIG_XXX_ENABLE 宏控制是否启用
+│   └─ 例如：CONFIG_XWDT_ENABLE 控制看门狗模块
+│
+├── startup/           # 系统启动代码
+│   └── 系统初始化、中断向量表
+│
+├── tasks/             # 任务管理
+│   └── 多任务创建、调度
+│
+└── resmgr/            # 资源管理器
+   └── 音频资源、算法资源加载
+开发重点区域：
+
+文件/目录	重要性	用途	开发频率
+source/main.c	⭐⭐⭐⭐⭐	系统主入口，外设初始化	非常高
+source/listen/app/ls_app_client.c	⭐⭐⭐⭐⭐	核心业务逻辑，命令响应处理	非常高
+source/mods/mod_gpio.c	⭐⭐⭐⭐	GPIO驱动实现（A10/A11/A12/B11）	高
+source/mods/	⭐⭐⭐	系统模块驱动（自动执行） ⚠️	中
+source/listen/app/ls_app_cfg_user.h	⭐	命令词配置（平台自动生成，无需手动修改）	低
+source/listen/tone/tone.h	⭐	提示音定义（平台自动生成，无需手动修改）	低
+source/listen/tone/tone_buf.h	⭐	提示音数据（平台自动生成，无需手动修改）	低
+source/listen/player/	⭐⭐	音频播放控制（平台已配置）	低
+⚠️ 重要说明：
+
+✅ 你的主要开发区域：source/main.c 和 source/listen/app/ls_app_client.c
+✅ 重点开发内容：外设初始化、GPIO控制（A10、A11、A12、B11）、业务逻辑
+❌ 无需关注：命令词、提示音配置（由网页平台自动生成）
+❌ 无需修改：ls_app_cfg_user.h、tone.h、tone_buf.h（平台自动更新）
+⚠️ 关于 mods 文件夹的特殊说明：
+
+source/mods/ 文件夹中的代码与普通示例代码不同，它们有以下特点：
+
+自动执行机制：
+mods 中的模块会在系统启动时自动初始化和执行
+例如：mod_xwdt.c 会在启动时自动初始化看门狗（如果 CONFIG_XWDT_ENABLE=1）
+这意味着它们不是供学习使用的示例代码，而是实际运行的系统模块
+宏配置控制：
+每个模块都有对应的宏配置，在 include/autoconf.h 中定义
+例如：
+#define CONFIG_XWDT_ENABLE 1      // 启用看门狗模块
+#define CONFIG_AADC_ENABLE 1      // 启用音频ADC模块
+#define CONFIG_CLSD_ENABLE 1      // 启用Class D功放模块
+如何修改外设配置： 如果你需要修改某个外设的默认配置（例如修改看门狗的超时时间），有两种方法： 方法1：禁用默认模块，自己实现（推荐）⭐
+// 1. 在 include/autoconf.h 中禁用默认模块
+// #define CONFIG_XWDT_ENABLE 1
+#define CONFIG_XWDT_ENABLE 0   // 禁用默认看门狗模块
+
+// 2. 在 main.c 或其他地方自己实现看门狗配置
+// 参考 source/listen/app/ls_app_wdt.c 中的示例
+void my_wdt_init() {
+    // 自定义看门狗配置
+    AON_WDT_Initialize(AON_WDT(), NULL, NULL);
+    AON_WDT_Control(AON_WDT(), HAL_AON_WDT_TIME_Msk, 320000);  // 自定义超时时间
+    // ...
+}
+方法2：直接修改 mods 模块代码
+// 直接修改 source/mods/mod_xwdt.c 中的配置
+// 例如修改第4行的超时时间
+#define WDT_TIMER_PERIOD (64000)  // 改为你需要的值
+
+// 但注意：这种方法在SDK更新时可能会被覆盖
+常见配置冲突问题： 如果你在 main.c 中配置了某个外设，但发现配置不生效，可能是因为对应的 mods 模块已经自动执行了。 解决方案：
+检查 include/autoconf.h，确认是否有对应的 CONFIG_XXX_ENABLE 宏
+如果有，将其设置为 0 来禁用默认模块
+然后在你的代码中实现自定义配置
+示例：看门狗配置冲突
+// 问题：你在 main.c 中配置看门狗，但发现不生效
+
+// 原因：mod_xwdt.c 已经自动初始化了看门狗
+
+// 解决方案：
+// 1. 在 include/autoconf.h 第88行
+#define CONFIG_XWDT_ENABLE 0   // 禁用默认看门狗模块
+
+// 2. 在 main.c 中自己配置看门狗
+extern int wdt_init_reset_mode();
+wdt_init_reset_mode();
+6. tools/ - 开发工具集目录
+这个目录包含各种开发和调试工具。
+
+tools/
+├── bin/               # 编译好的工具二进制文件
+│   ├── csk5060-enc-pack.exe  # Windows 固件打包工具
+│   ├── csk5060-enc-pack      # Linux 固件打包工具
+│   └── 其他工具...
+│
+├── binutils/          # 二进制工具
+│   └── 二进制文件处理、转换工具
+│
+├── cmake/             # CMake 构建脚本
+│   └── envsetup.cmake      # 环境设置
+│   ├── toolchain.cmake     # 工具链配置
+│   ├── buildutils.cmake    # 构建工具函数
+│   └── extargets.cmake     # 扩展目标定义
+│
+├── jflash/            # J-Flash 烧录工具配置
+│   └── J-Flash 项目文件、烧录配置
+│
+├── respack/           # 算法资源打包工具 ⭐ 重要
+│   ├── algo/               # 算法资源文件目录
+│   │   ├── main.bin        # 主算法模型
+│   │   ├── cmds.bin        # 命令词模型
+│   │   ├── mlp.bin         # MLP神经网络模型
+│   │   └── docs/           # 算法文档
+│   │
+│   ├── respack.py          # 资源打包Python脚本
+│   ├── auto_respak.sh      # 自动打包脚本
+│   ├── config.ini          # 打包配置
+│   └── respak.bin          # 打包后的资源包
+│
+├── tone_tool/         # 提示音生成工具
+│   ├── 将音频文件转换为SDK可用的提示音格式
+│   └── readme.txt          # 使用说明
+│
+└── uartool/           # UART串口下载工具
+│   └── 通过串口烧录固件
+重要工具说明：
+
+工具	用途	使用场景
+tools/respack/	算法资源打包 ⭐	当算法模型更新时，需要重新打包
+tools/tone_tool/	提示音转换 ⭐	添加新的提示音时使用
+tools/bin/csk5060-enc-pack	固件打包加密	每次编译后自动使用
+tools/jflash/	J-Flash烧录配置	使用J-Link烧录时
+tools/uartool/	串口烧录工具	无J-Link时通过串口烧录
+7. build/ - 编译输出目录
+这个目录存放编译后生成的文件，每次编译都会更新这里的内容。
+
+build/                  # 编译输出目录（自动生成）
+├── bin/                # 最终输出文件
+│   ├── app.elf         # ELF格式可执行文件（包含调试信息）
+│   └── app.bin         # 二进制固件（纯机器码）⭐ 最终烧录文件
+│
+├── CMakeFiles/         # CMake中间文件
+├── CMakeCache.txt      # CMake配置缓存
+│
+├── chip/               # chip目录的编译输出
+├── source/             # source目录的编译输出
+└── ...                 # 其他子目录的编译输出
+输出文件说明：
+
+文件	说明	使用场景
+build/bin/app.elf	ELF可执行文件	调试时使用（包含符号表）
+build/bin/app.bin	纯二进制固件 ⭐	实际烧录到芯片的文件
+二次开发指南
+开发前的准备
+1. 理解SDK的工作流程
+完整开发流程：
+
+┌─────────────────────────────────────────────────────────┐
+│  步骤1: 网页平台可视化配置                                │
+│  ├─ 配置命令词（语音命令）                                │
+│  ├─ 配置提示音（欢迎语、响应音）                          │
+│  ├─ 配置协议格式                                          │
+│  └─ 平台自动生成配置文件                                  │
+├─────────────────────────────────────────────────────────┤
+│  步骤2: 下载定制化SDK                                     │
+│  ├─ SDK已包含你的命令词配置                               │
+│  ├─ SDK已包含你的提示音文件                               │
+│  ├─ SDK已包含算法资源文件                                 │
+│  └─ 无需手动修改这些文件                                  │
+├─────────────────────────────────────────────────────────┤
+│  步骤3: 二次开发（你的工作重点）⭐                        │
+│  ├─ 初始化外设（GPIO、PWM、UART等）                       │
+│  ├─ 配置引脚功能（A10、A11、A12、B11等）                  │
+│  ├─ 实现命令响应逻辑                                      │
+│  └─ 编写业务控制代码                                      │
+├─────────────────────────────────────────────────────────┤
+│  步骤4: 编译和烧录                                        │
+│  ├─ 编译生成固件                                          │
+│  └─ 烧录到芯片                                            │
+└─────────────────────────────────────────────────────────┘
+关键理解：
+
+✅ 命令词和提示音：在网页平台配置，SDK下载时已自动生成，无需关注
+✅ 你的工作：专注于外设初始化和业务逻辑，响应语音命令执行硬件操作
+✅ 开发重点：GPIO引脚控制（A10、B11），实现具体的硬件控制逻辑
+2. SDK架构概览
+Mars SDK 采用分层架构：
+
+┌─────────────────────────────────────┐
+│  应用层 (source/listen/app/)         │  ← 你的开发重点⭐⭐⭐
+│  - 命令响应处理                      │
+│  - 外设初始化                        │
+│  - 业务控制逻辑                      │
+├─────────────────────────────────────┤
+│  配置层（平台自动生成，无需修改）      │  ← 网页平台配置
+│  - 命令词定义                        │
+│  - 提示音数据                        │
+│  - 协议格式                          │
+├─────────────────────────────────────┤
+│  服务层 (source/listen/)             │
+│  - 音频播放（已配置）                │
+│  - 语音识别回调（已配置）            │
+│  - 资源管理                          │
+├─────────────────────────────────────┤
+│  硬件抽象层 (source/mods/)           │  ← GPIO驱动实现
+│  - GPIO驱动                          │
+│  - UART驱动                          │
+│  - PWM驱动                           │
+├─────────────────────────────────────┤
+│  驱动层 (chip/include/)              │
+│  - HAL硬件抽象接口                   │
+│  - 寄存器操作                        │
+├─────────────────────────────────────┤
+│  芯片层 (chip/bsp/)                  │  ← 通常不修改
+│  - 系统启动                          │
+│  - 时钟配置                          │
+│  - 中断向量                          │
+└─────────────────────────────────────┘

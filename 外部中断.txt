@@ -1,0 +1,675 @@
+外部中断使用文档
+📚 概述
+外部中断是指当GPIO引脚的电平发生变化时（上升沿、下降沿等），自动触发中断服务函数的功能。通过外部中断，你可以立即响应外部事件，而不需要不断轮询检测GPIO状态。
+
+本教程以 A10 引脚为例，讲解GPIO外部中断的使用方法。
+
+🎯 学习目标
+通过本教程，你将学会：
+
+✅ 什么是外部中断以及为什么要用它
+✅ 如何配置GPIO外部中断
+✅ 5种中断触发方式的区别和应用场景
+✅ 如何编写中断服务函数
+✅ 如何使用防抖功能
+✅ 实际应用：按键检测、传感器触发等
+💡 为什么需要外部中断？
+传统轮询方式的问题
+不使用中断（轮询方式）：
+
+// ❌ 轮询方式：浪费CPU资源
+while (1) {
+    if (GPIO_PinRead(GPIOA(), CSK_GPIO_PIN10) == 0) {
+        // 按键按下
+        do_something();
+    }
+    x_task_sleep(10);  // 每10ms检测一次
+}
+问题：
+
+❌ CPU大部分时间在做无意义的检测
+❌ 响应延迟（最多10ms）
+❌ 无法做其他事情
+使用中断的优势
+使用外部中断：
+
+// ✅ 中断方式：立即响应，不浪费CPU
+void button_isr(uint32_t event, void* workspace) {
+    // 按键按下时自动调用
+    do_something();
+}
+
+// 主程序可以做其他事情
+while (1) {
+    do_other_tasks();
+    x_task_sleep(1000);
+}
+优势：
+
+✅ 立即响应（微秒级）
+✅ CPU可以做其他工作
+✅ 实时性好
+📌 重要提示
+可用引脚
+根据项目实际情况，以下引脚已被占用：
+
+引脚	状态	用途
+A10	✅ 可用	本教程示例引脚
+A11	❌ 已占用	协议串口TX
+A12	❌ 已占用	协议串口RX
+B11	✅ 可用	可用于GPIO中断
+本教程使用 A10 引脚作为示例。
+
+📦 头文件
+使用GPIO中断需要包含以下头文件：
+
+#include "Driver_GPIO.h"      // GPIO驱动接口
+#include "IOMuxManager.h"     // 引脚复用管理
+#include "PowerManager.h"     // 电源管理
+#include "lisa_log.h"         // 日志输出
+🔧 中断触发方式
+GPIO支持5种中断触发方式：
+
+触发方式	说明	应用场景
+低电平触发	引脚为低电平时持续触发	检测低电平告警信号
+高电平触发	引脚为高电平时持续触发	检测高电平告警信号
+下降沿触发	电平从高到低的瞬间触发	按键按下检测（常用）⭐
+上升沿触发	电平从低到高的瞬间触发	按键释放检测
+双边沿触发	上升沿和下降沿都触发	检测任意电平变化
+最常用：下降沿触发（按键按下时触发）
+
+📖 API 函数详解
+1. 初始化GPIO并注册中断回调
+int32_t GPIO_Initialize(void *res, CSK_GPIO_SignalEvent_t cb_event, void* workspace);
+功能： 初始化GPIO并注册中断回调函数
+
+参数：
+
+res: GPIO实例指针
+cb_event: 中断回调函数指针 ⭐ 重要
+workspace: 用户数据指针（传给回调函数）
+回调函数原型：
+
+typedef void (*CSK_GPIO_SignalEvent_t)(uint32_t event, void* workspace);
+参数说明：
+
+event: 触发中断的引脚掩码（例如 CSK_GPIO_PIN10 表示A10触发）
+workspace: 用户数据（初始化时传入的指针）
+示例：
+
+// 中断回调函数
+void my_gpio_isr(uint32_t event, void* workspace) {
+    if (event & CSK_GPIO_PIN10) {
+        printk("A10 interrupt triggered!\n");
+    }
+}
+
+// 初始化并注册回调
+GPIO_Initialize(GPIOA(), my_gpio_isr, NULL);
+2. 配置中断触发方式
+int32_t GPIO_Control(void* res, uint32_t control, uint32_t arg);
+功能： 配置GPIO中断参数
+
+参数：
+
+res: GPIO实例指针
+control: 控制参数（中断使能 + 触发方式）
+arg: 引脚掩码
+中断控制参数：
+
+使能/禁止中断
+参数	说明
+CSK_GPIO_INTR_ENABLE	使能中断
+CSK_GPIO_INTR_DISABLE	禁止中断
+触发方式
+参数	说明
+CSK_GPIO_SET_INTR_LOW_LEVEL	低电平触发
+CSK_GPIO_SET_INTR_HIGH_LEVEL	高电平触发
+CSK_GPIO_SET_INTR_NEGATIVE_EDGE	下降沿触发 ⭐
+CSK_GPIO_SET_INTR_POSITIVE_EDGE	上升沿触发
+CSK_GPIO_SET_INTR_DUAL_EDGE	双边沿触发
+防抖功能
+参数	说明
+CSK_GPIO_DEBOUNCE_ENABLE	使能防抖 ⭐
+CSK_GPIO_DEBOUNCE_DISABLE	禁止防抖
+示例：
+
+// 配置A10下降沿触发中断，使能防抖
+uint32_t intr_config = CSK_GPIO_INTR_ENABLE |           // 使能中断
+                       CSK_GPIO_SET_INTR_NEGATIVE_EDGE | // 下降沿触发
+                       CSK_GPIO_DEBOUNCE_DISABLE;         // 关闭硬件防抖
+
+GPIO_Control(GPIOA(), intr_config, CSK_GPIO_PIN10);
+💡 实战示例
+示例1：按键中断检测 ⭐⭐⭐
+需求： 使用A10引脚连接按键，按键按下时触发中断。
+
+硬件连接：
+
+VCC (3.3V)
+  |
+  ├── 10kΩ电阻（上拉）
+  |
+  ├── A10 (GPIO输入)
+  |
+  └── 按键 ── GND
+#include "Driver_GPIO.h"
+#include "IOMuxManager.h"
+#include "PowerManager.h"
+#include "ClockManager.h"
+#include "lisa_log.h"
+
+#define TAG "BUTTON"
+
+// 按键中断回调函数
+void button_isr(uint32_t event, void* workspace) {
+    // 检查是否是A10触发的中断
+    if (event & CSK_GPIO_PIN10) {
+        printk("Button A10 pressed! (ISR)\n");
+
+        // 在这里处理按键事件
+        // 例如：切换LED、发送消息等
+
+        // 注意：中断服务函数要尽量简短！
+        // 不要在这里做耗时操作
+    }
+}
+
+// 初始化按键中断
+int button_interrupt_init() {
+    // ⭐ 重要：使能GPIO时钟和复位
+    __HAL_PMU_GPIO0_RST_ENABLE();
+    __HAL_CRM_GPIO0_CLK_ENABLE();
+
+    printk("\n");  // 先换行，确保前面的日志完整
+    printk("========================================\n");
+    printk("Button interrupt initialized on A10\n");
+    printk("========================================\n");
+    printk("\n");
+
+    // 1. 配置A10为GPIO功能
+    IOMuxManager_PinConfigure(CSK_IOMUX_PAD_A, 10, CSK_IOMUX_FUNC_DEFAULT);
+
+    // 2. 初始化GPIO并注册中断回调 ⭐
+    GPIO_Initialize(GPIOA(), button_isr, NULL);
+
+    // 3. 设置A10为输入模式
+    GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_INPUT);
+
+    // 4. 配置上拉电阻（按键按下时接地）
+    GPIO_Control(GPIOA(), CSK_GPIO_MODE_PULL_UP, CSK_GPIO_PIN10);
+
+    // 5. 配置下降沿触发中断 ⭐
+    // ⚠️ 重要：根据实际测试，硬件防抖可能导致中断无法触发
+    // 建议使用 CSK_GPIO_DEBOUNCE_DISABLE，通过软件实现防抖
+    uint32_t intr_config = CSK_GPIO_INTR_ENABLE |
+                           CSK_GPIO_SET_INTR_NEGATIVE_EDGE |  // 下降沿触发
+                           CSK_GPIO_DEBOUNCE_DISABLE;          // ⭐ 关闭硬件防抖
+
+    GPIO_Control(GPIOA(), intr_config, CSK_GPIO_PIN10);
+
+    printk("⚠️ 注意：硬件防抖已关闭，需要软件防抖处理\n");
+    printk("========================================\n");
+
+    return 0;
+}
+
+// 使用示例
+void example_button_interrupt() {
+    button_interrupt_init();
+
+    printk("Waiting for button press...\n");
+
+    // 主循环可以做其他事情
+    while (1) {
+        // CPU可以做其他工作
+        // 按键按下时会自动触发中断
+        x_task_sleep(1000);
+    }
+}
+示例2：按键控制LED（中断方式）
+需求： 按键按下时切换LED状态。
+
+#include "Driver_GPIO.h"
+#include "IOMuxManager.h"
+
+// LED引脚：A10（实际应使用其他引脚，这里仅作示例）
+#define LED_PIN  CSK_GPIO_PIN10
+
+// 按键引脚：B11
+#define BUTTON_PIN  CSK_GPIO_PIN11
+
+static int led_state = 0;
+
+// 按键中断回调
+void button_isr(uint32_t event, void* workspace) {
+    if (event & BUTTON_PIN) {
+        // 切换LED状态
+        led_state = !led_state;
+        GPIO_PinWrite(GPIOB(), LED_PIN, led_state);
+        printk("LED: %s\n", led_state ? "ON" : "OFF");
+    }
+}
+
+// 初始化LED
+void led_init() {
+    IOMuxManager_PinConfigure(CSK_IOMUX_PAD_B, 10, CSK_IOMUX_FUNC_DEFAULT);
+    GPIO_Initialize(GPIOB(), NULL, NULL);
+    GPIO_SetDir(GPIOB(), CSK_GPIO_PIN10, CSK_GPIO_DIR_OUTPUT);
+    GPIO_PinWrite(GPIOB(), CSK_GPIO_PIN10, 0);
+}
+
+// 初始化按键中断
+void button_init() {
+    // ⭐ 使能GPIO时钟和复位
+    __HAL_PMU_GPIO0_RST_ENABLE();
+    __HAL_CRM_GPIO0_CLK_ENABLE();
+
+    IOMuxManager_PinConfigure(CSK_IOMUX_PAD_B, 11, CSK_IOMUX_FUNC_DEFAULT);
+    GPIO_Initialize(GPIOB(), button_isr, NULL);  // 注册中断回调
+    GPIO_SetDir(GPIOB(), BUTTON_PIN, CSK_GPIO_DIR_INPUT);
+    GPIO_Control(GPIOB(), CSK_GPIO_MODE_PULL_UP, BUTTON_PIN);
+
+    // 下降沿触发（关闭硬件防抖）
+    uint32_t intr_config = CSK_GPIO_INTR_ENABLE |
+                           CSK_GPIO_SET_INTR_NEGATIVE_EDGE |
+                           CSK_GPIO_DEBOUNCE_DISABLE;
+    GPIO_Control(GPIOB(), intr_config, BUTTON_PIN);
+}
+
+// 使用示例
+void example_button_control_led() {
+    led_init();
+    button_init();
+
+    printk("Press button to toggle LED\n");
+
+    while (1) {
+        x_task_sleep(1000);  // 主循环可以做其他事
+    }
+}
+示例3：上升沿和下降沿中断（双边沿）
+需求： 检测按键按下和释放两个事件。
+
+#include "Driver_GPIO.h"
+#include "IOMuxManager.h"
+
+// 双边沿中断回调
+void dual_edge_isr(uint32_t event, void* workspace) {
+    if (event & CSK_GPIO_PIN10) {
+        // 读取当前电平
+        int level = GPIO_PinRead(GPIOA(), CSK_GPIO_PIN10);
+
+        if (level == 0) {
+            printk("Button pressed (falling edge)\n");
+            // 按键按下时的处理
+        } else {
+            printk("Button released (rising edge)\n");
+            // 按键释放时的处理
+        }
+    }
+}
+
+// 初始化双边沿中断
+void dual_edge_init() {
+    // ⭐ 使能GPIO时钟和复位
+    __HAL_PMU_GPIO0_RST_ENABLE();
+    __HAL_CRM_GPIO0_CLK_ENABLE();
+
+    IOMuxManager_PinConfigure(CSK_IOMUX_PAD_A, 10, CSK_IOMUX_FUNC_DEFAULT);
+    GPIO_Initialize(GPIOA(), dual_edge_isr, NULL);
+    GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_INPUT);
+    GPIO_Control(GPIOA(), CSK_GPIO_MODE_PULL_UP, CSK_GPIO_PIN10);
+
+    // 双边沿触发（关闭硬件防抖）
+    uint32_t intr_config = CSK_GPIO_INTR_ENABLE |
+                           CSK_GPIO_SET_INTR_DUAL_EDGE |  // 双边沿
+                           CSK_GPIO_DEBOUNCE_DISABLE;
+    GPIO_Control(GPIOA(), intr_config, CSK_GPIO_PIN10);
+}
+
+// 使用示例
+void example_dual_edge() {
+    dual_edge_init();
+
+    while (1) {
+        x_task_sleep(1000);
+    }
+}
+示例4：红外传感器中断检测
+需求： 红外传感器检测到人体时触发中断。
+
+#include "Driver_GPIO.h"
+#include "IOMuxManager.h"
+
+// 红外传感器中断回调
+void pir_sensor_isr(uint32_t event, void* workspace) {
+    if (event & CSK_GPIO_PIN10) {
+        printk("Person detected!\n");
+
+        // 触发警报、打开灯等操作
+        // alarm_trigger();
+        // light_on();
+    }
+}
+
+// 初始化红外传感器中断
+void pir_sensor_init() {
+    // ⭐ 使能GPIO时钟和复位
+    __HAL_PMU_GPIO0_RST_ENABLE();
+    __HAL_CRM_GPIO0_CLK_ENABLE();
+
+    IOMuxManager_PinConfigure(CSK_IOMUX_PAD_A, 10, CSK_IOMUX_FUNC_DEFAULT);
+    GPIO_Initialize(GPIOA(), pir_sensor_isr, NULL);
+    GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_INPUT);
+
+    // 上升沿触发（传感器检测到人体时输出高电平，关闭硬件防抖）
+    uint32_t intr_config = CSK_GPIO_INTR_ENABLE |
+                           CSK_GPIO_SET_INTR_POSITIVE_EDGE |
+                           CSK_GPIO_DEBOUNCE_DISABLE;
+    GPIO_Control(GPIOA(), intr_config, CSK_GPIO_PIN10);
+
+    printk("PIR sensor interrupt initialized\n");
+}
+
+// 使用示例
+void example_pir_sensor() {
+    pir_sensor_init();
+
+    printk("Waiting for person detection...\n");
+
+    while (1) {
+        // CPU可以休眠或做其他事
+        // 检测到人体时会自动触发中断
+        x_task_sleep(1000);
+    }
+}
+示例5：多个引脚中断
+需求： 同时监控A10和B11两个引脚的中断。
+
+#include "Driver_GPIO.h"
+#include "IOMuxManager.h"
+
+// 多引脚中断回调
+void multi_pin_isr(uint32_t event, void* workspace) {
+    // 检查是哪个引脚触发的中断
+    if (event & CSK_GPIO_PIN10) {
+        printk("A10 interrupt triggered\n");
+        // 处理A10事件
+    }
+
+    if (event & CSK_GPIO_PIN11) {
+        printk("B11 interrupt triggered\n");
+        // 处理B11事件
+    }
+}
+
+// 初始化多引脚中断
+void multi_pin_interrupt_init() {
+    // ⭐ 使能GPIOA和GPIOB时钟和复位
+    __HAL_PMU_GPIO0_RST_ENABLE();
+    __HAL_CRM_GPIO0_CLK_ENABLE();
+
+    // 初始化GPIOA和GPIOB
+    GPIO_Initialize(GPIOA(), multi_pin_isr, NULL);
+    GPIO_Initialize(GPIOB(), multi_pin_isr, NULL);
+
+    // 配置A10
+    IOMuxManager_PinConfigure(CSK_IOMUX_PAD_A, 10, CSK_IOMUX_FUNC_DEFAULT);
+    GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_INPUT);
+    GPIO_Control(GPIOA(), CSK_GPIO_MODE_PULL_UP, CSK_GPIO_PIN10);
+
+    uint32_t intr_config = CSK_GPIO_INTR_ENABLE |
+                           CSK_GPIO_SET_INTR_NEGATIVE_EDGE |
+                           CSK_GPIO_DEBOUNCE_DISABLE;
+    GPIO_Control(GPIOA(), intr_config, CSK_GPIO_PIN10);
+
+    // 配置B11
+    IOMuxManager_PinConfigure(CSK_IOMUX_PAD_B, 11, CSK_IOMUX_FUNC_DEFAULT);
+    GPIO_SetDir(GPIOB(), CSK_GPIO_PIN11, CSK_GPIO_DIR_INPUT);
+    GPIO_Control(GPIOB(), CSK_GPIO_MODE_PULL_UP, CSK_GPIO_PIN11);
+    GPIO_Control(GPIOB(), intr_config, CSK_GPIO_PIN11);
+
+    printk("Multi-pin interrupt initialized\n");
+}
+📝 中断使用要点
+✅ 中断回调函数编写规则
+必须简短快速
+// ✅ 好的做法：设置标志位
+static int button_pressed = 0;
+
+void button_isr(uint32_t event, void* workspace) {
+    if (event & CSK_GPIO_PIN10) {
+        button_pressed = 1;  // 只设置标志
+    }
+}
+
+// 在主循环中处理
+while (1) {
+    if (button_pressed) {
+        button_pressed = 0;
+        // 处理按键事件（可以耗时）
+        process_button();
+    }
+}
+
+// ❌ 不好的做法：在中断中做耗时操作
+void button_isr(uint32_t event, void* workspace) {
+    // 不要这样做！
+    for (int i = 0; i < 1000000; i++);  // 延时
+    send_uart_message("...");            // 发送大量数据
+}
+不要调用阻塞函数
+// ❌ 不要在中断中调用这些函数
+void button_isr(uint32_t event, void* workspace) {
+    x_task_sleep(100);  // ❌ 不要延时
+    while (!ready);      // ❌ 不要等待
+}
+使用 volatile 变量
+// ✅ 正确：使用volatile
+volatile static int flag = 0;
+
+void isr(uint32_t event, void* workspace) {
+    flag = 1;
+}
+
+// 主循环
+while (1) {
+    if (flag) {
+        flag = 0;
+        handle_event();
+    }
+}
+✅ 防抖功能使用
+⚠️ 重要提示：根据实际测试，硬件防抖可能导致中断无法触发！
+
+问题现象：
+
+使能硬件防抖（CSK_GPIO_DEBOUNCE_ENABLE）后，中断无法触发
+关闭硬件防抖（CSK_GPIO_DEBOUNCE_DISABLE）后，中断正常触发
+解决方案：关闭硬件防抖，使用软件防抖
+
+方案1：关闭硬件防抖（推荐）⭐
+// ✅ 推荐：关闭硬件防抖
+uint32_t intr_config = CSK_GPIO_INTR_ENABLE |
+                       CSK_GPIO_SET_INTR_NEGATIVE_EDGE |
+                       CSK_GPIO_DEBOUNCE_DISABLE;  // ⭐ 关闭硬件防抖
+
+GPIO_Control(GPIOA(), intr_config, CSK_GPIO_PIN10);
+配合软件防抖：
+
+volatile static uint32_t last_interrupt_time = 0;
+
+void button_isr(uint32_t event, void* workspace) {
+    if (event & CSK_GPIO_PIN10) {
+        uint32_t current_time = get_current_ms();  // 获取当前时间（毫秒）
+
+        // ⭐ 软件防抖：两次中断间隔至少100ms
+        if (current_time - last_interrupt_time > 100) {
+            last_interrupt_time = current_time;
+
+            // 处理按键事件
+            printk("Button pressed (debounced)\n");
+        } else {
+            printk("Button bounced, ignored\n");
+        }
+    }
+}
+方案2：硬件防抖（可能不工作）
+// ⚠️ 可能导致中断无法触发
+uint32_t intr_config = CSK_GPIO_INTR_ENABLE |
+                       CSK_GPIO_SET_INTR_NEGATIVE_EDGE |
+                       CSK_GPIO_DEBOUNCE_ENABLE;  // ⚠️ 硬件防抖
+
+GPIO_Control(GPIOA(), intr_config, CSK_GPIO_PIN10);
+建议：优先使用方案1（关闭硬件防抖 + 软件防抖）
+
+⚠️ 常见错误和解决方法
+错误1：中断不触发
+现象： 按下按键，但中断回调函数不被调用。
+
+原因：
+
+未注册中断回调
+未使能中断
+触发方式配置错误
+解决方法：
+
+// ✅ 正确的完整流程
+void button_isr(uint32_t event, void* workspace) {
+    // ...
+}
+
+// ⭐ 使能GPIO时钟和复位（必须步骤！）
+__HAL_PMU_GPIO0_RST_ENABLE();
+__HAL_CRM_GPIO0_CLK_ENABLE();
+
+// 1. 注册回调
+GPIO_Initialize(GPIOA(), button_isr, NULL);  // ⭐ 必须注册
+
+// 2. 使能中断
+uint32_t intr_config = CSK_GPIO_INTR_ENABLE |  // ⭐ 必须使能
+                       CSK_GPIO_SET_INTR_NEGATIVE_EDGE |
+                       CSK_GPIO_DEBOUNCE_DISABLE;
+GPIO_Control(GPIOA(), intr_config, CSK_GPIO_PIN10);
+错误2：硬件防抖导致中断不触发 ⚠️
+现象： 使能硬件防抖后，按键按下但中断无法触发。
+
+原因： 根据实际测试，硬件防抖功能可能导致中断无法触发。
+
+解决方法：
+
+// ✅ 关闭硬件防抖，使用软件防抖
+uint32_t intr_config = CSK_GPIO_INTR_ENABLE |
+                       CSK_GPIO_SET_INTR_NEGATIVE_EDGE |
+                       CSK_GPIO_DEBOUNCE_DISABLE;  // ⭐ 关闭硬件防抖
+
+GPIO_Control(GPIOA(), intr_config, CSK_GPIO_PIN10);
+
+// 配合软件防抖（见防抖功能使用部分）
+错误3：中断连续触发多次
+现象： 按键按下一次，中断触发多次（按键抖动）。
+
+原因： 机械按键抖动，未做防抖处理。
+
+解决方法：
+
+// ✅ 软件防抖方案
+volatile static uint32_t last_interrupt_time = 0;
+
+void button_isr(uint32_t event, void* workspace) {
+    if (event & CSK_GPIO_PIN10) {
+        uint32_t current_time = get_current_ms();
+
+        // 软件防抖：两次中断间隔至少100ms
+        if (current_time - last_interrupt_time > 100) {
+            last_interrupt_time = current_time;
+            printk("Button pressed\n");
+        }
+    }
+}
+错误4：中断回调中使用延时
+现象： 程序卡死或异常。
+
+原因： 中断服务函数中调用了阻塞函数。
+
+解决方法：
+
+// ✅ 正确：设置标志位
+volatile static int flag = 0;
+
+void button_isr(uint32_t event, void* workspace) {
+    flag = 1;  // 只设置标志
+}
+
+// 在主循环中处理
+while (1) {
+    if (flag) {
+        flag = 0;
+        x_task_sleep(100);  // 在主循环中延时
+        process_event();
+    }
+}
+
+// ❌ 错误：在中断中延时
+void button_isr(uint32_t event, void* workspace) {
+    x_task_sleep(100);  // ❌ 不要这样做！
+}
+🔍 调试技巧
+1. 使用串口日志
+void button_isr(uint32_t event, void* workspace) {
+    if (event & CSK_GPIO_PIN10) {
+        printk("[ISR] Button interrupt triggered\n");
+        printk("[ISR] Event = 0x%08X\n", event);
+    }
+}
+2. 使用LED指示中断
+void button_isr(uint32_t event, void* workspace) {
+    static int led = 0;
+    led = !led;
+    GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, led);  // LED闪烁表示中断触发
+}
+3. 统计中断次数
+volatile static int interrupt_count = 0;
+
+void button_isr(uint32_t event, void* workspace) {
+    interrupt_count++;
+}
+
+// 在主循环中打印
+while (1) {
+    printk("Interrupt count: %d\n", interrupt_count);
+    x_task_sleep(1000);
+}
+📊 中断 vs 轮询对比
+特性	轮询方式	中断方式
+响应速度	慢（取决于轮询间隔）	快（微秒级）⭐
+CPU占用	高（持续检测）	低（仅触发时处理）⭐
+编程复杂度	简单	中等
+实时性	差	好 ⭐
+功耗	高	低 ⭐
+适用场景	低频率检测	需要快速响应 ⭐
+建议：
+
+✅ 按键检测：使用中断
+✅ 传感器触发：使用中断
+✅ 紧急事件：使用中断
+❌ 高频率事件（>100Hz）：考虑轮询或DMA
+❓ 常见问题
+Q1: 中断回调函数可以调用其他驱动吗？
+A: 可以，但要注意：
+
+✅ 可以调用非阻塞的驱动函数
+❌ 不要调用会阻塞的函数
+✅ 尽量简短，复杂处理放到主循环
+Q2: 如何动态禁止和使能中断？
+A:
+
+// 禁止中断
+GPIO_Control(GPIOA(), CSK_GPIO_INTR_DISABLE, CSK_GPIO_PIN10);
+
+// 使能中断
+uint32_t intr_config = CSK_GPIO_INTR_ENABLE | ...;
+GPIO_Control(GPIOA(), intr_config, CSK_GPIO_PIN10);
+Q3: 一个引脚可以同时使用多个中断触发方式吗？
+A: 不可以。一个引脚只能配置一种触发方式（低电平、高电平、下降沿、上升沿或双边沿）。

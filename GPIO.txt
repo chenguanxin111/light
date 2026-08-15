@@ -1,0 +1,551 @@
+GPIO 驱动使用文档
+📚 概述
+GPIO（General Purpose Input/Output，通用输入输出）是最基础的外设，用于控制引脚的电平状态。本教程将带你从零开始学习GPIO的使用，包括引脚配置、输入输出控制等基础操作。
+
+本教程以 A10 引脚为例，讲解GPIO的基本使用方法。
+
+🎯 学习目标
+通过本教程，你将学会：
+
+✅ 如何初始化GPIO引脚
+✅ 如何配置GPIO为输出模式（控制LED、继电器等）
+✅ 如何配置GPIO为输入模式（读取按键、传感器等）
+✅ 如何控制GPIO输出高低电平
+✅ 如何读取GPIO输入状态
+✅ 如何配置上下拉电阻
+📌 重要提示
+可用引脚
+根据项目实际情况，以下引脚已被占用：
+
+引脚	状态	用途
+A10	✅ 可用	本教程示例引脚
+A11	❌ 已占用	协议串口TX
+A12	❌ 已占用	协议串口RX
+B11	✅ 可用	可用于GPIO
+本教程使用 A10 引脚作为示例，你可以根据实际需求更换为其他可用引脚。
+
+📦 头文件
+使用GPIO需要包含以下头文件：
+
+#include "Driver_GPIO.h"      // GPIO驱动接口
+#include "IOMuxManager.h"     // 引脚复用管理
+#include "PowerManager.h"     // 电源管理
+🔧 GPIO基础概念
+GPIO的两种模式
+模式	说明	应用场景
+输出模式	GPIO向外输出电平信号	控制LED、继电器、蜂鸣器等
+输入模式	GPIO读取外部电平信号	读取按键、传感器、开关状态等
+GPIO的电平
+电平	电压值	逻辑值
+高电平	约3.3V	1
+低电平	约0V	0
+上下拉电阻
+类型	说明	应用场景
+上拉	引脚默认为高电平	按键检测（按键按下时接地）
+下拉	引脚默认为低电平	按键检测（按键按下时接VCC）
+无上下拉	引脚悬空	外部已有上下拉电路
+📖 API 函数详解
+1. 获取GPIO实例
+void* GPIOA(void);  // 获取GPIOA组实例（A00-A18）
+void* GPIOB(void);  // 获取GPIOB组实例（B00-B12）
+说明：
+
+GPIO引脚分为两组：GPIOA（A00-A18）和 GPIOB（B00-B12）
+A10 属于 GPIOA 组
+B11 属于 GPIOB 组
+示例：
+
+void *gpioa = GPIOA();  // 获取GPIOA实例
+void *gpiob = GPIOB();  // 获取GPIOB实例
+2. 初始化GPIO
+int32_t GPIO_Initialize(void *res, CSK_GPIO_SignalEvent_t cb_event, void* workspace);
+功能： 初始化GPIO接口
+
+参数：
+
+res: GPIO实例指针（GPIOA() 或 GPIOB()）
+cb_event: 事件回调函数（基础使用时可传 NULL）
+workspace: 用户工作空间（可传 NULL）
+返回值：
+
+CSK_DRIVER_OK (0): 成功
+负值: 失败
+示例：
+
+// 初始化GPIOA（不需要中断回调）
+GPIO_Initialize(GPIOA(), NULL, NULL);
+3. 设置GPIO方向
+int32_t GPIO_SetDir(void* res, uint32_t pin_mask, uint32_t dir);
+功能： 设置GPIO引脚方向（输入或输出）
+
+参数：
+
+res: GPIO实例指针
+pin_mask: 引脚掩码（使用 CSK_GPIO_PINn 宏）
+dir: 方向
+CSK_GPIO_DIR_INPUT: 输入模式
+CSK_GPIO_DIR_OUTPUT: 输出模式
+引脚掩码：
+
+CSK_GPIO_PIN0   // 引脚0
+CSK_GPIO_PIN1   // 引脚1
+...
+CSK_GPIO_PIN10  // 引脚10（A10对应PIN10）
+...
+CSK_GPIO_PIN12  // 引脚12
+示例：
+
+// 设置A10为输出模式
+GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_OUTPUT);
+
+// 设置A10为输入模式
+GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_INPUT);
+4. 写GPIO电平
+int32_t GPIO_PinWrite(void* res, uint32_t pin_mask, uint32_t val);
+功能： 设置GPIO输出电平
+
+参数：
+
+res: GPIO实例指针
+pin_mask: 引脚掩码
+val: 电平值
+0: 低电平（0V）
+1: 高电平（3.3V）
+示例：
+
+// 设置A10输出高电平
+GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, 1);
+
+// 设置A10输出低电平
+GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, 0);
+5. 读GPIO电平
+int32_t GPIO_PinRead(void* res, uint32_t pin_mask);
+功能： 读取GPIO输入电平
+
+参数：
+
+res: GPIO实例指针
+pin_mask: 引脚掩码
+返回值：
+
+0: 低电平
+非0: 高电平
+示例：
+
+// 读取A10电平
+int level = GPIO_PinRead(GPIOA(), CSK_GPIO_PIN10);
+
+if (level == 0) {
+    printk("A10 is LOW\n");
+} else {
+    printk("A10 is HIGH\n");
+}
+6. GPIO控制（上下拉配置）
+int32_t GPIO_Control(void* res, uint32_t control, uint32_t arg);
+功能： 配置GPIO参数（上下拉等）
+
+参数：
+
+res: GPIO实例指针
+control: 控制参数
+arg: 参数值（通常是引脚掩码）
+上下拉配置：
+
+参数	说明
+CSK_GPIO_MODE_PULL_UP	上拉电阻
+CSK_GPIO_MODE_PULL_DOWN	下拉电阻
+CSK_GPIO_MODE_PULL_NONE	无上下拉
+示例：
+
+// 配置A10使用上拉电阻
+GPIO_Control(GPIOA(), CSK_GPIO_MODE_PULL_UP, CSK_GPIO_PIN10);
+
+// 配置A10使用下拉电阻
+GPIO_Control(GPIOA(), CSK_GPIO_MODE_PULL_DOWN, CSK_GPIO_PIN10);
+
+// 配置A10无上下拉
+GPIO_Control(GPIOA(), CSK_GPIO_MODE_PULL_NONE, CSK_GPIO_PIN10);
+💡 实战示例
+示例1：GPIO输出 - 控制LED ⭐
+需求： 使用A10引脚控制LED，实现LED的开关控制。
+
+#include "Driver_GPIO.h"
+#include "IOMuxManager.h"
+#include "PowerManager.h"
+#include "lisa_log.h"
+
+#define TAG "LED"
+
+// 初始化LED（A10引脚）
+int led_init() {
+    // 1. 配置A10引脚为GPIO功能
+    IOMuxManager_PinConfigure(CSK_IOMUX_PAD_A, 10, CSK_IOMUX_FUNC_DEFAULT);
+
+    // 2. 初始化GPIOA
+    GPIO_Initialize(GPIOA(), NULL, NULL);
+
+    // 3. 设置A10为输出模式
+    GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_OUTPUT);
+
+    // 4. 初始状态：关闭LED（输出低电平）
+    GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, 0);
+
+    printk("LED initialized on A10\n");
+    return 0;
+}
+
+// 打开LED
+void led_on() {
+    GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, 1);
+    printk("LED ON\n");
+}
+
+// 关闭LED
+void led_off() {
+    GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, 0);
+    printk("LED OFF\n");
+}
+
+// 切换LED状态
+void led_toggle() {
+    static int state = 0;
+    state = !state;
+    GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, state);
+    printk("LED TOGGLE: %s\n", state ? "ON" : "OFF");
+}
+
+// 使用示例
+void example_led_control() {
+    led_init();
+
+    // 打开LED
+    led_on();
+    x_task_sleep(1000);  // 延时1秒
+
+    // 关闭LED
+    led_off();
+    x_task_sleep(1000);
+
+    // 闪烁3次
+    for (int i = 0; i < 3; i++) {
+        led_toggle();
+        x_task_sleep(500);
+    }
+}
+示例2：GPIO输出 - 控制继电器
+需求： 使用A10引脚控制继电器开关。
+
+#include "Driver_GPIO.h"
+#include "IOMuxManager.h"
+
+// 初始化继电器
+int relay_init() {
+    // 配置A10为GPIO输出
+    IOMuxManager_PinConfigure(CSK_IOMUX_PAD_A, 10, CSK_IOMUX_FUNC_DEFAULT);
+    GPIO_Initialize(GPIOA(), NULL, NULL);
+    GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_OUTPUT);
+
+    // 初始状态：关闭继电器
+    GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, 0);
+
+    printk("Relay initialized on A10\n");
+    return 0;
+}
+
+// 打开继电器
+void relay_on() {
+    GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, 1);
+    printk("Relay ON\n");
+}
+
+// 关闭继电器
+void relay_off() {
+    GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, 0);
+    printk("Relay OFF\n");
+}
+
+// 使用示例
+void example_relay_control() {
+    relay_init();
+
+    // 打开继电器5秒
+    relay_on();
+    x_task_sleep(5000);
+
+    // 关闭继电器
+    relay_off();
+}
+示例3：GPIO输入 - 读取按键状态 ⭐
+需求： 使用A10引脚读取按键状态（按键按下时接地）。
+
+硬件连接：
+
+VCC (3.3V)
+  |
+  ├── 10kΩ电阻（上拉电阻）
+  |
+  ├── A10 (GPIO输入)
+  |
+  └── 按键 ── GND
+#include "Driver_GPIO.h"
+#include "IOMuxManager.h"
+
+// 初始化按键（A10引脚）
+int button_init() {
+    // 1. 配置A10为GPIO功能
+    IOMuxManager_PinConfigure(CSK_IOMUX_PAD_A, 10, CSK_IOMUX_FUNC_DEFAULT);
+
+    // 2. 初始化GPIOA
+    GPIO_Initialize(GPIOA(), NULL, NULL);
+
+    // 3. 设置A10为输入模式
+    GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_INPUT);
+
+    // 4. 配置上拉电阻（按键按下时接地，所以需要上拉）
+    GPIO_Control(GPIOA(), CSK_GPIO_MODE_PULL_UP, CSK_GPIO_PIN10);
+
+    printk("Button initialized on A10\n");
+    return 0;
+}
+
+// 读取按键状态
+// 返回值：0 = 未按下，1 = 已按下
+int button_read() {
+    int level = GPIO_PinRead(GPIOA(), CSK_GPIO_PIN10);
+
+    // 按键按下时接地，电平为低（0）
+    // 按键未按时上拉到VCC，电平为高（1）
+    // 所以：低电平 = 按下，高电平 = 未按
+    return (level == 0) ? 1 : 0;
+}
+
+// 等待按键按下（阻塞）
+void button_wait_press() {
+    while (button_read() == 0) {
+        x_task_sleep(10);  // 每10ms检测一次
+    }
+    printk("Button pressed!\n");
+}
+
+// 使用示例
+void example_button_read() {
+    button_init();
+
+    printk("Waiting for button press...\n");
+
+    while (1) {
+        if (button_read()) {
+            printk("Button is pressed!\n");
+
+            // 等待按键释放（防抖）
+            while (button_read()) {
+                x_task_sleep(10);
+            }
+            printk("Button released\n");
+        }
+
+        x_task_sleep(50);  // 每50ms检测一次
+    }
+}
+示例4：GPIO输入 - 读取传感器状态
+需求： 使用A10引脚读取红外传感器输出（检测有人/无人）。
+
+#include "Driver_GPIO.h"
+#include "IOMuxManager.h"
+
+// 初始化传感器
+int sensor_init() {
+    IOMuxManager_PinConfigure(CSK_IOMUX_PAD_A, 10, CSK_IOMUX_FUNC_DEFAULT);
+    GPIO_Initialize(GPIOA(), NULL, NULL);
+    GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_INPUT);
+
+    // 不使用上下拉（传感器自己驱动）
+    GPIO_Control(GPIOA(), CSK_GPIO_MODE_PULL_NONE, CSK_GPIO_PIN10);
+
+    printk("Sensor initialized on A10\n");
+    return 0;
+}
+
+// 读取传感器状态
+// 返回值：0 = 无人，1 = 有人
+int sensor_read() {
+    return GPIO_PinRead(GPIOA(), CSK_GPIO_PIN10);
+}
+
+// 使用示例
+void example_sensor_read() {
+    sensor_init();
+
+    while (1) {
+        if (sensor_read()) {
+            printk("Person detected!\n");
+        } else {
+            printk("No person\n");
+        }
+
+        x_task_sleep(1000);  // 每秒检测一次
+    }
+}
+示例5：组合使用 - 按键控制LED
+需求： 按键按下时点亮LED，按键释放时熄灭LED。
+
+#include "Driver_GPIO.h"
+#include "IOMuxManager.h"
+
+// LED控制引脚：A10
+#define LED_PIN  CSK_GPIO_PIN10
+
+// 按键输入引脚：B11
+#define BUTTON_PIN  CSK_GPIO_PIN11
+
+// 初始化LED
+void led_init() {
+    IOMuxManager_PinConfigure(CSK_IOMUX_PAD_A, 10, CSK_IOMUX_FUNC_DEFAULT);
+    GPIO_Initialize(GPIOA(), NULL, NULL);
+    GPIO_SetDir(GPIOA(), LED_PIN, CSK_GPIO_DIR_OUTPUT);
+    GPIO_PinWrite(GPIOA(), LED_PIN, 0);  // 初始关闭
+}
+
+// 初始化按键
+void button_init() {
+    IOMuxManager_PinConfigure(CSK_IOMUX_PAD_B, 11, CSK_IOMUX_FUNC_DEFAULT);
+    GPIO_Initialize(GPIOB(), NULL, NULL);
+    GPIO_SetDir(GPIOB(), BUTTON_PIN, CSK_GPIO_DIR_INPUT);
+    GPIO_Control(GPIOB(), CSK_GPIO_MODE_PULL_UP, BUTTON_PIN);  // 上拉
+}
+
+// 主循环
+void example_button_control_led() {
+    led_init();
+    button_init();
+
+    printk("Button control LED example started\n");
+
+    while (1) {
+        // 读取按键状态
+        int button_pressed = (GPIO_PinRead(GPIOB(), BUTTON_PIN) == 0);
+
+        if (button_pressed) {
+            // 按键按下，点亮LED
+            GPIO_PinWrite(GPIOA(), LED_PIN, 1);
+        } else {
+            // 按键释放，熄灭LED
+            GPIO_PinWrite(GPIOA(), LED_PIN, 0);
+        }
+
+        x_task_sleep(20);  // 每20ms检测一次
+    }
+}
+📝 完整初始化流程总结
+GPIO输出初始化步骤
+// 1. 配置引脚复用为GPIO功能
+IOMuxManager_PinConfigure(CSK_IOMUX_PAD_A, 10, CSK_IOMUX_FUNC_DEFAULT);
+
+// 2. 初始化GPIO
+GPIO_Initialize(GPIOA(), NULL, NULL);
+
+// 3. 设置为输出模式
+GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_OUTPUT);
+
+// 4. 设置初始电平
+GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, 0);  // 或 1
+GPIO输入初始化步骤
+// 1. 配置引脚复用为GPIO功能
+IOMuxManager_PinConfigure(CSK_IOMUX_PAD_A, 10, CSK_IOMUX_FUNC_DEFAULT);
+
+// 2. 初始化GPIO
+GPIO_Initialize(GPIOA(), NULL, NULL);
+
+// 3. 设置为输入模式
+GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_INPUT);
+
+// 4. 配置上下拉（可选）
+GPIO_Control(GPIOA(), CSK_GPIO_MODE_PULL_UP, CSK_GPIO_PIN10);
+
+// 5. 读取电平
+int level = GPIO_PinRead(GPIOA(), CSK_GPIO_PIN10);
+⚠️ 常见错误和解决方法
+错误1：GPIO输出无效
+现象： 设置GPIO输出高电平，但引脚电压仍为0V。
+
+原因：
+
+未配置引脚复用功能
+未初始化GPIO
+解决方法：
+
+// ✅ 正确的做法
+IOMuxManager_PinConfigure(CSK_IOMUX_PAD_A, 10, CSK_IOMUX_FUNC_DEFAULT);  // 必须！
+GPIO_Initialize(GPIOA(), NULL, NULL);
+GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_OUTPUT);
+GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, 1);
+
+// ❌ 错误的做法（缺少初始化步骤）
+GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, 1);  // 直接写，未初始化
+错误2：GPIO读取值不稳定
+现象： GPIO输入读取的值随机变化。
+
+原因：
+
+引脚悬空（无上下拉）
+外部电路驱动能力不足
+解决方法：
+
+// ✅ 添加上拉或下拉电阻
+GPIO_Control(GPIOA(), CSK_GPIO_MODE_PULL_UP, CSK_GPIO_PIN10);  // 上拉
+
+// 或
+
+GPIO_Control(GPIOA(), CSK_GPIO_MODE_PULL_DOWN, CSK_GPIO_PIN10);  // 下拉
+错误3：引脚编号错误
+现象： 配置了A10，但实际控制的是其他引脚。
+
+原因： 引脚编号理解错误。
+
+解决方法：
+
+// ✅ 正确：A10对应PIN10
+GPIO_SetDir(GPIOA(), CSK_GPIO_PIN10, CSK_GPIO_DIR_OUTPUT);
+
+// ❌ 错误：直接写数字
+GPIO_SetDir(GPIOA(), 10, CSK_GPIO_DIR_OUTPUT);  // 错误！
+
+// ✅ 正确：B11对应PIN11（在GPIOB组）
+GPIO_SetDir(GPIOB(), CSK_GPIO_PIN11, CSK_GPIO_DIR_OUTPUT);
+🔍 调试技巧
+1. 使用万用表测量电压
+输出高电平：引脚电压应约为 3.3V
+输出低电平：引脚电压应约为 0V
+2. 使用串口日志调试
+// 在关键位置添加日志
+printk("GPIO A10 initialized\n");
+printk("Set A10 to HIGH\n");
+printk("Read A10: %d\n", GPIO_PinRead(GPIOA(), CSK_GPIO_PIN10));
+3. 使用LED指示状态
+// 用LED指示程序运行状态
+GPIO_PinWrite(GPIOA(), CSK_GPIO_PIN10, 1);  // 程序运行到这里
+❓ 常见问题
+Q1: A10、A11、A12引脚有什么区别？
+A:
+
+A10: ✅ 可用作GPIO、PWM等
+A11: ❌ 已用作协议串口TX，不可他用
+A12: ❌ 已用作协议串口RX，不可他用
+Q2: 如何选择上下拉电阻？
+A:
+
+按键检测：使用上拉电阻（按键接地）
+传感器输入：根据传感器输出类型选择
+不确定时：使用上拉电阻最常见
+Q3: GPIO最大输出电流是多少？
+A: 通常单个GPIO引脚输出电流为 4-8mA，如需驱动更大电流负载（如LED、继电器），请使用驱动电路（三极管、MOSFET等）。
+
+Q4: 如何同时控制多个GPIO？
+A:
+
+// 同时设置多个引脚
+uint32_t pin_mask = CSK_GPIO_PIN10 | CSK_GPIO_PIN11 | CSK_GPIO_PIN12;
+GPIO_SetDir(GPIOA(), pin_mask, CSK_GPIO_DIR_OUTPUT);
+
+// 同时写入多个引脚（所有引脚输出相同电平）
+GPIO_PinWrite(GPIOA(), pin_mask, 1);

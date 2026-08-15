@@ -1,0 +1,10 @@
+1_0:xiao3 ling2 xiao3 ling2
+1_1:xiao3 ling2 xiao3 ling2
+2_0:da4 hong2
+2_1:da4 hong2
+3_0:zhi2 xing2
+3_1:zhi2 xing2
+4_0:zuo3 zhuan3
+4_1:zuo3 zhuan3
+5_0:you4 zhuan3
+5_1:you4 zhuan3
