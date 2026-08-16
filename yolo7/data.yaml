@@ -1,0 +1,9 @@
+names:
+  0: red
+  1: left_green
+  2: right_green
+  3: straight_green
+  4: left_yellow
+  5: right_yellow
+  6: straight_yellow
+nc: 7
